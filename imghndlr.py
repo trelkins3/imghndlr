@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 
 # Configuration file path
 # Check if the --conf flag was passed in the command line arguments
+# TODO: Better to use argparse?
 USE_CONFIG = "--conf" in sys.argv
 
 # Only establish a config path if the user explicitly asked for it
