@@ -376,7 +376,7 @@ class ImgOrchestrator:
         Establishes an isolated context-managed system path, triggers network collection workers,
         initializes parent tkinter rendering routines, and flushes temporary space upon program exit.
         """
-        thread_url: str = input(prompt="Enter 4chan Thread URL: ").strip()
+        thread_url: str = input("Enter 4chan Thread URL: ").strip()
         if not thread_url:
             print("URL cannot be empty.")
             return
