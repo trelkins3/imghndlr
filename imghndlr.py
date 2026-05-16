@@ -11,7 +11,15 @@ import requests
 from PIL import Image, ImageTk
 
 # Configuration file path
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# Check if the --conf flag was passed in the command line arguments
+USE_CONFIG = "--conf" in sys.argv
+
+# Only establish a config path if the user explicitly asked for it
+CONFIG_FILE = (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    if USE_CONFIG
+    else None
+)
 
 
 class ImgDownloader:
@@ -161,26 +169,29 @@ class ImgGalleryUI:
         self._load_image_data()
 
     def _load_saved_directory(self) -> str:
-        """Loads the saved directory from config.json fallback to current working directory."""
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r") as f:
-                    config = json.load(f)
-                    saved_path = config.get("save_directory", "")
-                    if saved_path:
-                        return saved_path
-            except Exception:
-                pass
-        return os.getcwd()
+            """Loads the saved directory from config.json if enabled; fallback to CWD."""
+            if CONFIG_FILE and os.path.exists(CONFIG_FILE):
+                try:
+                    with open(CONFIG_FILE, "r") as f:
+                        config = json.load(f)
+                        saved_path = config.get("save_directory", "")
+                        if saved_path:
+                            return saved_path
+                except Exception:
+                    pass
+            return os.getcwd()
 
     def _save_directory_to_config(self, path: str) -> None:
-        """Persists the target directory path into config.json file."""
-        try:
-            config = {"save_directory": path}
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(config, f, indent=4)
-        except Exception as e:
-            print(f"Warning: Failed to save directory configuration: {e}")
+            """Persists the target directory path into config.json only if enabled."""
+            if not CONFIG_FILE:
+                return  # Skip silently if --conf wasn't provided
+                
+            try:
+                config = {"save_directory": path}
+                with open(CONFIG_FILE, "w") as f:
+                    json.dump(config, f, indent=4)
+            except Exception as e:
+                print(f"Warning: Failed to save directory configuration: {e}")
 
     def _build_ui(self) -> None:
         """Constructs and packs the visual widget layout tree inside the host application window."""
@@ -227,7 +238,7 @@ class ImgGalleryUI:
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
         
-        # CHANGED: Bind Escape key to exit the UI application window context
+        # Bind Escape key to exit the UI application window context
         self.root.bind(sequence="<Escape>", func=self._handle_escape_key)
         
         # Strip focus hooks
@@ -343,7 +354,7 @@ class ImgGalleryUI:
             self.save_current_image()
 
     def _handle_escape_key(self, event: tk.Event) -> None:
-        """CHANGED: Event binding bridge routing Escape key pressures to UI close routine."""
+        """Event binding bridge routing Escape key pressures to UI close routine."""
         self.root.destroy()
 
     def update_save_status(self) -> None:
@@ -402,14 +413,18 @@ class ImgGalleryUI:
 
 class ImgOrchestrator:
     """
-    The central manager orchestrating downloads, temporary directories, and launching the GUI.
+    Central manager:
+        * Orchestrates downloads
+        * Manages temporary directories
+        * Launches the GUI
     
-    This controller class governs the absolute lifecycle of the session application scope. It
-    handles terminal prompts, provisions isolated OS-level scratchpads, boots downloader components,
+    This controller class governs the absolute lifecycle of the session application scope (try saying that 3 times 
+    fast). It handles terminal prompts, provisions isolated OS-level scratchpads, boots downloader components,
     and handles automatic cleanup operations when the GUI window is dismissed.
     """
     
     def __init__(self) -> None:
+        # Sort of goofy that we have this function
         pass
 
     def run(self) -> None:
@@ -439,6 +454,7 @@ class ImgOrchestrator:
                 return
 
             root: tk.Tk = tk.Tk()
+            # Create app object for later usage
             app = ImgGalleryUI(root=root, image_paths=downloaded_images)
             root.mainloop()
             
