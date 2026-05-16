@@ -3,11 +3,16 @@ import shutil
 import sys
 import tempfile
 import tkinter as tk
+import json
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
 import requests
 from PIL import Image, ImageTk
+
+# Configuration file path
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
 
 class ImgDownloader:
     """
@@ -155,6 +160,28 @@ class ImgGalleryUI:
         self._bind_events()
         self._load_image_data()
 
+    def _load_saved_directory(self) -> str:
+        """Loads the saved directory from config.json fallback to current working directory."""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config = json.load(f)
+                    saved_path = config.get("save_directory", "")
+                    if saved_path:
+                        return saved_path
+            except Exception:
+                pass
+        return os.getcwd()
+
+    def _save_directory_to_config(self, path: str) -> None:
+        """Persists the target directory path into config.json file."""
+        try:
+            config = {"save_directory": path}
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            print(f"Warning: Failed to save directory configuration: {e}")
+
     def _build_ui(self) -> None:
         """Constructs and packs the visual widget layout tree inside the host application window."""
         # 1. Save Status Bar (Absolute Bottom)
@@ -170,7 +197,9 @@ class ImgGalleryUI:
         
         self.dir_entry = tk.Entry(master=save_frame, font=("Arial", 10))
         self.dir_entry.pack(side="left", expand=True, fill="x", padx=5)
-        self.dir_entry.insert(index=0, string=os.getcwd())
+        
+        initial_dir = self._load_saved_directory()
+        self.dir_entry.insert(index=0, string=initial_dir)
         
         self.save_btn = tk.Button(master=save_frame, text="Save Image (Space)", command=self.save_current_image, bg="#4CAF50", fg="white")
         self.save_btn.pack(side="left", padx=5)
@@ -198,10 +227,14 @@ class ImgGalleryUI:
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
         
+        # CHANGED: Bind Escape key to exit the UI application window context
+        self.root.bind(sequence="<Escape>", func=self._handle_escape_key)
+        
         # Strip focus hooks
         self.root.bind(sequence="<Button-1>", func=self._clear_entry_focus)
         self.image_label.bind(sequence="<Button-1>", func=self._clear_entry_focus)
-        self.dir_entry.bind(sequence="<KeyRelease>", func=lambda event: self.update_save_status())
+        
+        self.dir_entry.bind(sequence="<KeyRelease>", func=self._handle_dir_entry_change)
         
         # Resize hooks
         self.image_label.bind(sequence="<Configure>", func=self._on_window_resize)
@@ -220,6 +253,12 @@ class ImgGalleryUI:
         """
         if event.widget != self.dir_entry:
             self.root.focus()
+
+    def _handle_dir_entry_change(self, event: tk.Event) -> None:
+        """Fires whenever the user alters the text entry, logging configuration updates instantly."""
+        target_dir = self.dir_entry.get().strip()
+        self._save_directory_to_config(target_dir)
+        self.update_save_status()
 
     def _load_image_data(self) -> None:
         """
@@ -303,6 +342,10 @@ class ImgGalleryUI:
         if self.root.focus_get() != self.dir_entry:
             self.save_current_image()
 
+    def _handle_escape_key(self, event: tk.Event) -> None:
+        """CHANGED: Event binding bridge routing Escape key pressures to UI close routine."""
+        self.root.destroy()
+
     def update_save_status(self) -> None:
         """
         Evaluates whether the currently viewed file exists in the specified destination directory.
@@ -335,6 +378,9 @@ class ImgGalleryUI:
         if not target_dir:
             self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
             return
+            
+        self._save_directory_to_config(target_dir)
+
         if not os.path.exists(target_dir):
             try:
                 os.makedirs(name=target_dir, exist_ok=True)
@@ -364,9 +410,6 @@ class ImgOrchestrator:
     """
     
     def __init__(self) -> None:
-        """
-        Initializes structural tracking objects for the orchestration manager context loop.
-        """
         pass
 
     def run(self) -> None:
@@ -381,12 +424,10 @@ class ImgOrchestrator:
             print("URL cannot be empty.")
             return
 
-        # Scopes out the temporary folder safely
         with tempfile.TemporaryDirectory() as tmpdir:
             print(f"Created temporary directory at: {tmpdir}")
             
             try:
-                # Instantiate the specialized scraping class
                 downloader = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
                 downloaded_images: List[str] = downloader.fetch_and_download()
             except Exception as e:
@@ -397,7 +438,6 @@ class ImgOrchestrator:
                 print("No images were downloaded.")
                 return
 
-            # Instantiate and pass data to the specialized GUI engine
             root: tk.Tk = tk.Tk()
             app = ImgGalleryUI(root=root, image_paths=downloaded_images)
             root.mainloop()
