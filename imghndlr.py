@@ -12,7 +12,7 @@ from PIL import Image, ImageTk
 
 # Configuration file path
 # Check if the --conf flag was passed in the command line arguments
-# TODO: Better to use argparse?
+# TODO: USE ARGPARSE!!! This is not safe
 USE_CONFIG = "--conf" in sys.argv
 
 # Only establish a config path if the user explicitly asked for it
@@ -66,6 +66,7 @@ class ImgDownloader:
         :param post: Dict, a single post object extracted from the 4chan thread JSON API.
         :return: A tuple containing (local_path, img_filename) indicating the saved file state.
         """
+        # THIS IS SPECIAL SAUCE!!!
         img_filename: str = f"{post['tim']}{post['ext']}"
         img_url: str = f"https://i.4cdn.org/{self.board}/{img_filename}"
         local_path: str = os.path.join(self.target_dir, img_filename)
@@ -80,7 +81,7 @@ class ImgDownloader:
         Orchestrates the multi-threaded download process for the parsed thread target.
 
         Fetches thread metadata via the 4chan JSON API, filters out posts containing 
-        valid media attachments, and processes downloads concurrently using a ThreadPoolExecutor.
+        invalid media attachments, and processes downloads concurrently using a ThreadPoolExecutor.
 
         :return: List of strings representing sorted local file paths to the downloaded images.
         :raises HTTPError: If the remote API endpoint fails to respond successfully.
@@ -131,13 +132,16 @@ class ImgGalleryUI:
     Handles the graphical user interface, event bindings, and image presentation.
     
     This class wraps a tkinter Tk root instance to construct a functional image gallery desktop app.
-    It supports automatic scaling based on window size, asynchronous entry focus stripping, 
-    status persistence checking, and user directory mapping for permanent file preservation.
+
+    * Supports automatic scaling based on window size
+    * Allows asynchronous entry focus stripping [What?]
+    * Status persistence checking
+    * End user directory mapping (for saving files)
     """
     
     def __init__(self, root: tk.Tk, image_paths: List[str]) -> None:
         """
-        Initializes the user interface workspace, state registers, and active graphics canvas.
+        Initializes UI workspace, state registers, and active graphics canvas.
 
         :param root: The active tk.Tk() window wrapper context.
         :param image_paths: List of strings, path mappings pointing to downloaded images.
@@ -170,29 +174,33 @@ class ImgGalleryUI:
         self._load_image_data()
 
     def _load_saved_directory(self) -> str:
-            """Loads the saved directory from config.json if enabled; fallback to CWD."""
-            if CONFIG_FILE and os.path.exists(CONFIG_FILE):
-                try:
-                    with open(CONFIG_FILE, "r") as f:
-                        config = json.load(f)
-                        saved_path = config.get("save_directory", "")
-                        if saved_path:
-                            return saved_path
-                except Exception:
-                    pass
-            return os.getcwd()
+        """
+        Loads the saved directory from config.json if enabled; fallback to CWD.
+        """
+        if CONFIG_FILE and os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config = json.load(f)
+                    saved_path = config.get("save_directory", "")
+                    if saved_path:
+                        return saved_path
+            except Exception:
+                pass
+        return os.getcwd()
 
     def _save_directory_to_config(self, path: str) -> None:
-            """Persists the target directory path into config.json only if enabled."""
-            if not CONFIG_FILE:
-                return  # Skip silently if --conf wasn't provided
-                
-            try:
-                config = {"save_directory": path}
-                with open(CONFIG_FILE, "w") as f:
-                    json.dump(config, f, indent=4)
-            except Exception as e:
-                print(f"Warning: Failed to save directory configuration: {e}")
+        """
+        Persists the target directory path into config.json only if enabled.
+        """
+        if not CONFIG_FILE:
+            return  # Skip silently if --conf wasn't provided
+            
+        try:
+            config = {"save_directory": path}
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            print(f"Warning: Failed to save directory configuration: {e}")
 
     def _build_ui(self) -> None:
         """Constructs and packs the visual widget layout tree inside the host application window."""
@@ -412,20 +420,19 @@ class ImgGalleryUI:
             self.status_bar.config(text="⚠ Error: Failed to copy file.", fg="#d84315")
 
 
-class ImgOrchestrator:
+class ImgHndlrOrchestrator:
     """
-    Central manager:
+    Central manager for primary workflow:
+        * Handles terminal prompts 
         * Orchestrates downloads
         * Manages temporary directories
         * Launches the GUI
     
-    This controller class governs the absolute lifecycle of the session application scope (try saying that 3 times 
-    fast). It handles terminal prompts, provisions isolated OS-level scratchpads, boots downloader components,
-    and handles automatic cleanup operations when the GUI window is dismissed.
+    Session application scope absolute lifestyle controller (try saying that 3 times fast).
     """
     
     def __init__(self) -> None:
-        # Sort of goofy that we have this function
+        # Sort of goofy to have this function; opportunity for refactor?
         pass
 
     def run(self) -> None:
@@ -466,11 +473,11 @@ class ImgOrchestrator:
     @classmethod
     def main(cls) -> None:
         """            
-        Initializes and runs the ImgOrchestrator (ImgDownloader + ImgGalleryUI).
+        Initializes and runs the ImgHndlrOrchestrator (ImgDownloader + ImgGalleryUI).
         """
         orchestrator = cls()
         orchestrator.run()
 
 
 if __name__ == "__main__":
-    ImgOrchestrator.main()
+    ImgHndlrOrchestrator.main()
