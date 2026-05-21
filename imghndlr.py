@@ -203,7 +203,9 @@ class ImgGalleryUI:
             print(f"Warning: Failed to save directory configuration: {e}")
 
     def _build_ui(self) -> None:
-        """Constructs and packs the visual widget layout tree inside the host application window."""
+        """
+        Constructs and packs the visual widget layout tree inside the host application window.
+        """
         # 1. Save Status Bar (Absolute Bottom)
         self.status_bar = tk.Label(master=self.root, text="", font=("Arial", 11, "bold"), bd=1, relief="sunken", anchor="w", padx=10, pady=5)
         self.status_bar.pack(side="bottom", fill="x")
@@ -242,7 +244,9 @@ class ImgGalleryUI:
         self.image_label.pack(side="top", expand=True, fill="both")
 
     def _bind_events(self) -> None:
-        """Attaches system key hooks, widget focus managers, and container configuration listeners."""
+        """
+        Attaches system key hooks, widget focus managers, and container configuration listeners.
+        """
         self.root.bind(sequence="<Left>", func=self._handle_left_key)
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
@@ -260,7 +264,9 @@ class ImgGalleryUI:
         self.image_label.bind(sequence="<Configure>", func=self._on_window_resize)
 
     def _show_empty_message(self) -> None:
-        """Packs a default fallback message widget if zero valid images are available to display."""
+        """
+        Packs a default fallback message widget if zero valid images are available to display.
+        """
         lbl = tk.Label(master=self.root, text="No images found or downloaded.", font=("Arial", 14))
         lbl.pack(expand=True)
 
@@ -275,7 +281,9 @@ class ImgGalleryUI:
             self.root.focus()
 
     def _handle_dir_entry_change(self, event: tk.Event) -> None:
-        """Fires whenever the user alters the text entry, logging configuration updates instantly."""
+        """
+        Fires whenever the user alters the text entry, logging configuration updates instantly.
+        """
         target_dir = self.dir_entry.get().strip()
         self._save_directory_to_config(target_dir)
         self.update_save_status()
@@ -333,23 +341,31 @@ class ImgGalleryUI:
         self.render_scaled_image()
 
     def show_prev(self) -> None:
-        """Cycles backward to the previous available image in the list index, wrapping around if needed."""
+        """
+        Cycles backward to the previous available image in the list index, wrapping around if needed.
+        """
         if self.image_paths:
             self.current_index = (self.current_index - 1) % len(self.image_paths)
             self._load_image_data()
 
     def show_next(self) -> None:
-        """Cycles forward to the next available image in the list index, wrapping around if needed."""
+        """
+        Cycles forward to the next available image in the list index, wrapping around if needed.
+        """
         if self.image_paths:
             self.current_index = (self.current_index + 1) % len(self.image_paths)
             self._load_image_data()
 
     def _handle_left_key(self, event: tk.Event) -> None:
-        """Event binding bridge routing Left Arrow keyboard presses to show_prev execution."""
+        """
+        Event binding bridge routing Left Arrow keyboard presses to show_prev execution.
+        """
         self.show_prev()
 
     def _handle_right_key(self, event: tk.Event) -> None:
-        """Event binding bridge routing Right Arrow keyboard presses to show_next execution."""
+        """
+        Event binding bridge routing Right Arrow keyboard presses to show_next execution.
+        """
         self.show_next()
 
     def _handle_space_key(self, event: tk.Event) -> None:
@@ -363,7 +379,9 @@ class ImgGalleryUI:
             self.save_current_image()
 
     def _handle_escape_key(self, event: tk.Event) -> None:
-        """Event binding bridge routing Escape key pressures to UI close routine."""
+        """
+        Event binding bridge routing Escape key pressures to UI close routine.
+        """
         self.root.destroy()
 
     def update_save_status(self) -> None:
