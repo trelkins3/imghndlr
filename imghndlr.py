@@ -148,6 +148,7 @@ class ImgGalleryUI:
         self.status_bar: tk.Label
         self.dir_entry: tk.Entry
         self.save_btn: tk.Button
+        self.delete_btn: tk.Button
         self.prev_btn: tk.Button
         self.status_label: tk.Label
         self.next_btn: tk.Button
@@ -163,7 +164,7 @@ class ImgGalleryUI:
 
     def _load_saved_directory(self) -> str:
         """
-        Loads the saved directory from config.json if enabled; fallback to CWD.
+        Loads the saved directory from imghndlr.conf if enabled.
         """
         if ImgHndlrOrchestrator.CONFIG_FILE and os.path.exists(ImgHndlrOrchestrator.CONFIG_FILE):
             try:
@@ -178,7 +179,7 @@ class ImgGalleryUI:
 
     def _save_directory_to_config(self, path: str) -> None:
         """
-        Persists the target directory path into config.json only if enabled.
+        Persists the target directory path into imghndlr.conf only if enabled.
         """
         if not ImgHndlrOrchestrator.CONFIG_FILE:
             return  # Skip silently if --conf wasn't provided
@@ -214,6 +215,9 @@ class ImgGalleryUI:
         self.save_btn = tk.Button(master=save_frame, text="Save Image (Space)", command=self.save_current_image, bg="#4CAF50", fg="white")
         self.save_btn.pack(side="left", padx=5)
         
+        self.delete_btn = tk.Button(master=save_frame, text="Delete (Del)", command=self.delete_current_image, bg="#f44336", fg="white")
+        self.delete_btn.pack(side="left", padx=5)
+        
         # 3. Navigation Controls Frame (Above Save Frame)
         nav_frame = tk.Frame(master=self.root)
         nav_frame.pack(side="bottom", fill="x", pady=5)
@@ -238,6 +242,7 @@ class ImgGalleryUI:
         self.root.bind(sequence="<Left>", func=self._handle_left_key)
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
+        self.root.bind(sequence="<Delete>", func=self._handle_delete_key)
         
         # Bind Escape key to exit the UI application window context
         self.root.bind(sequence="<Escape>", func=self._handle_escape_key)
@@ -366,6 +371,16 @@ class ImgGalleryUI:
         if self.root.focus_get() != self.dir_entry:
             self.save_current_image()
 
+    def _handle_delete_key(self, event: tk.Event) -> None:
+        """
+        Event binding bridge routing Delete key presses to delete operations.
+
+        Ignores execution calls if the user is explicitly focused on editing text inside the
+        target path input box.
+        """
+        if self.root.focus_get() != self.dir_entry:
+            self.delete_current_image()
+
     def _handle_escape_key(self, event: tk.Event) -> None:
         """
         Event binding bridge routing Escape key pressures to UI close routine.
@@ -425,6 +440,35 @@ class ImgGalleryUI:
         except Exception:
             self.status_bar.config(text="⚠ Error: Failed to copy file.", fg="#d84315")
 
+    def delete_current_image(self) -> None:
+        """
+        Deletes the currently selected image from the target save directory if it exists.
+
+        Updates status bar with feedback and navigates to the next image after deletion.
+        """
+        if not self.image_paths:
+            return
+        target_dir: str = self.dir_entry.get().strip()
+        if not target_dir:
+            self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
+            return
+
+        src_path: str = self.image_paths[self.current_index]
+        filename: str = os.path.basename(src_path)
+        dest_path: str = os.path.join(target_dir, filename)
+
+        if not os.path.exists(dest_path):
+            self.status_bar.config(text="✓ File not in destination (nothing to delete).", fg="#ff9800")
+            return
+
+        try:
+            os.remove(dest_path)
+            print(f"Deleted: {dest_path}")
+            self.status_bar.config(text="✓ Image deleted from destination.", fg="#2e7d32")
+            self.update_save_status()
+        except Exception as e:
+            self.status_bar.config(text="⚠ Error: Failed to delete file.", fg="#d84315")
+
 
 class ImgHndlrOrchestrator:
     """
@@ -453,7 +497,7 @@ class ImgHndlrOrchestrator:
         parser.add_argument(
             "--conf",
             action="store_true",
-            help="Enable saving the image save directory to config.json.",
+            help="Enable saving the image save directory path to imghndlr.conf.",
         )
         return parser.parse_args()
 
@@ -465,7 +509,7 @@ class ImgHndlrOrchestrator:
         initializes parent tkinter rendering routines, and flushes temporary space upon program exit.
         """
         if use_config:
-            self.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+            ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imghndlr.conf")
 
         if not thread_url:
             thread_url = input("Enter 4chan Thread URL: ").strip()
