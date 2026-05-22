@@ -1,6 +1,6 @@
 # imghndlr
 
-`imghndlr` is a lightweight, concurrent image downloader, interactive desktop gallery viewer, and extensible image toolkit. Originally built to replace the legacy, unmaintained **GalleryMaker** utility, `imghndlr` is designed from the ground up to be a generalized framework for scraping, viewing, and processing batches of remote image assets.
+`imghndlr` is a lightweight concurrent image downloader and interactive desktop gallery viewer. Originally built to replace the **GalleryMaker** web app, the long term goal is to turn `imghndlr` into a generalized image management and modification toolkit.
 
 The initial core module fetches high-resolution image assets directly from public 4chan boards using the 4chan API and provides an elegant Tkinter GUI to preview, scale, and permanently organize wallpapers.
 
@@ -33,20 +33,17 @@ Launch `imghndlr` directly from your terminal:
 python imghndlr.py
 ```
 
+`--conf` can be specified to generate a (non-temporary) config file that will retain your target image destination across tool instances.
+
 ---
 
 ## Workflow
-1. Provide input URIL (ex: https://boards.4chan.org/wg/thread/XXXXXX) when prompted by the terminal
+1. Provide input URI (ex: https://boards.4chan.org/wg/thread/XXXXXX) when prompted by the terminal
 2. Choose a destination for assets by typing a file path into the text box
 3. Navigate the gallery with the buttons or left and right arrow keys; spacebar or 'save image' can be used to save
 4. Cleanup! Closing imghndlr will flush and purge the isolated temporary storage
 
 ---
-
-## Replacing 'GalleryMaker'
-Shout out to the person who maintained https://gallerymaker.net/ for years; I got a lot of use out of it and its death inspired me to create this utility. Back to boilerplate...
-
-This project ensures seamless continuity for archiving high-resolution wallpapers, artwork arrays, and sequential images natively from thread archives. Moving forward, the architectural goal for imghndlr is to expand beyond thread archiving into an all-in-one handler utility for downloading, optimizing, and organizing custom image sets.
 
 ## AI Policy
 This application DOES use artificial intelligence. Gemini was used extensively for development purposes.

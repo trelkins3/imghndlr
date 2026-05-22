@@ -1,6 +1,6 @@
+import argparse
 import os
 import shutil
-import sys
 import tempfile
 import tkinter as tk
 import json
@@ -9,18 +9,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
 import requests
 from PIL import Image, ImageTk
-
-# Configuration file path
-# Check if the --conf flag was passed in the command line arguments
-# TODO: USE ARGPARSE!!! This is not safe
-USE_CONFIG = "--conf" in sys.argv
-
-# Only establish a config path if the user explicitly asked for it
-CONFIG_FILE = (
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    if USE_CONFIG
-    else None
-)
 
 
 class ImgDownloader:
@@ -177,9 +165,9 @@ class ImgGalleryUI:
         """
         Loads the saved directory from config.json if enabled; fallback to CWD.
         """
-        if CONFIG_FILE and os.path.exists(CONFIG_FILE):
+        if ImgHndlrOrchestrator.CONFIG_FILE and os.path.exists(ImgHndlrOrchestrator.CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, "r") as f:
+                with open(ImgHndlrOrchestrator.CONFIG_FILE, "r") as f:
                     config = json.load(f)
                     saved_path = config.get("save_directory", "")
                     if saved_path:
@@ -192,12 +180,12 @@ class ImgGalleryUI:
         """
         Persists the target directory path into config.json only if enabled.
         """
-        if not CONFIG_FILE:
+        if not ImgHndlrOrchestrator.CONFIG_FILE:
             return  # Skip silently if --conf wasn't provided
             
         try:
             config = {"save_directory": path}
-            with open(CONFIG_FILE, "w") as f:
+            with open(ImgHndlrOrchestrator.CONFIG_FILE, "w") as f:
                 json.dump(config, f, indent=4)
         except Exception as e:
             print(f"Warning: Failed to save directory configuration: {e}")
@@ -448,53 +436,74 @@ class ImgHndlrOrchestrator:
     
     Session application scope absolute lifestyle controller (try saying that 3 times fast).
     """
-    
+
+    CONFIG_FILE: Optional[str] = None
+
     def __init__(self) -> None:
-        # Sort of goofy to have this function; opportunity for refactor?
         pass
 
-    def run(self) -> None:
+    @staticmethod
+    def parse_args() -> argparse.Namespace:
+        parser = argparse.ArgumentParser(description="Download and browse 4chan thread images.")
+        parser.add_argument(
+            "thread_url",
+            nargs="?",
+            help="4chan thread URL to download images from. If omitted, the program will prompt for it.",
+        )
+        parser.add_argument(
+            "--conf",
+            action="store_true",
+            help="Enable saving the image save directory to config.json.",
+        )
+        return parser.parse_args()
+
+    def run(self, thread_url: Optional[str] = None, use_config: bool = False) -> None:
         """
         Prompts input, constructs handlers, executes operations, and cleans up assets.
 
         Establishes an isolated context-managed system path, triggers network collection workers,
         initializes parent tkinter rendering routines, and flushes temporary space upon program exit.
         """
-        thread_url: str = input("Enter 4chan Thread URL: ").strip()
+        if use_config:
+            self.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+        if not thread_url:
+            thread_url = input("Enter 4chan Thread URL: ").strip()
+
         if not thread_url:
             print("URL cannot be empty.")
             return
 
         with tempfile.TemporaryDirectory() as tmpdir:
             print(f"Created temporary directory at: {tmpdir}")
-            
+
             try:
                 downloader = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
                 downloaded_images: List[str] = downloader.fetch_and_download()
             except Exception as e:
                 print(f"Error handling download operations: {e}")
                 return
-            
+
             if not downloaded_images:
                 print("No images were downloaded.")
                 return
 
             root: tk.Tk = tk.Tk()
-            # Create app object for later usage
             app = ImgGalleryUI(root=root, image_paths=downloaded_images)
             root.mainloop()
-            
+
             print("GUI closed. Temporary directory is now being cleaned up...")
 
         print("Cleanup complete. Goodbye!")
 
     @classmethod
     def main(cls) -> None:
-        """            
-        Initializes and runs the ImgHndlrOrchestrator (ImgDownloader + ImgGalleryUI).
         """
+        Initializes and runs the ImgHndlrOrchestrator using argparse.
+        """
+        args = cls.parse_args()
         orchestrator = cls()
-        orchestrator.run()
+        orchestrator.run(thread_url=args.thread_url, use_config=args.conf)
 
 
 if __name__ == "__main__":
