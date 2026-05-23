@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import tkinter as tk
 import json
+from abc import ABC, abstractmethod
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
@@ -11,7 +12,23 @@ import requests
 from PIL import Image, ImageTk
 
 
-class ImgDownloader:
+class ImageSource(ABC):
+    """
+    Abstract base class representing a source of images.
+
+    Concrete subclasses implement get_images() to provide a list of local image
+    paths ready for display in the UI.
+    """
+
+    def __init__(self, target_dir: str) -> None:
+        self.target_dir: str = target_dir
+
+    @abstractmethod
+    def get_images(self) -> List[str]:
+        """Return a list of image file paths from the source."""
+
+
+class ImgDownloader(ImageSource):
     """
     Handles 4chan API interactions and concurrent image downloading.
 
@@ -22,7 +39,7 @@ class ImgDownloader:
     
     def __init__(self, thread_url: str, target_dir: str) -> None:
         """
-        Initializes downloader with source URL and (local) target directory.
+        Initializes the image source with a thread URL and a local target directory.
 
         :param thread_url: Full web address of the target 4chan thread.
         :param target_dir: Local filesystem path where images should be saved.
@@ -49,7 +66,7 @@ class ImgDownloader:
 
     def _download_single_image(self, post: Dict[str, Any]) -> Tuple[str, str]:
         """
-        Worker function intended for execution within a thread pool to fetch an individual file.
+        Worker function intended for execution within a thread pool to download an individual file.
 
         :param post: Dict, a single post object extracted from the 4chan thread JSON API.
         :return: A tuple containing (local_path, img_filename) indicating the saved file state.
@@ -64,7 +81,7 @@ class ImgDownloader:
             f.write(img_data)
         return local_path, img_filename
 
-    def fetch_and_download(self) -> List[str]:
+    def get_images(self) -> List[str]:
         """
         Orchestrates the multi-threaded download process for the parsed thread target.
 
@@ -135,7 +152,7 @@ class ImgGalleryUI:
         :param image_paths: List of strings, path mappings pointing to downloaded images.
         """
         self.root: tk.Tk = root
-        self.root.title(string="imghndlr - 4chan Gallery")
+        self.root.title(string="imghndlr Gallery")
         self.root.geometry(newGeometry="800x700")
         self.root.minsize(width=450, height=450)
         
@@ -474,7 +491,7 @@ class ImgHndlrOrchestrator:
     """
     Central manager for primary workflow:
         * Handles terminal prompts 
-        * Orchestrates downloads
+        * Orchestrates image sources
         * Manages temporary directories
         * Launches the GUI
     
@@ -488,7 +505,7 @@ class ImgHndlrOrchestrator:
 
     @staticmethod
     def parse_args() -> argparse.Namespace:
-        parser = argparse.ArgumentParser(description="Download and browse 4chan thread images.")
+        parser = argparse.ArgumentParser(description="Fetch and browse images.")
         parser.add_argument(
             "thread_url",
             nargs="?",
@@ -512,7 +529,7 @@ class ImgHndlrOrchestrator:
             ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imghndlr.conf")
 
         if not thread_url:
-            thread_url = input("Enter 4chan Thread URL: ").strip()
+            thread_url = input("Enter thread URL: ").strip()
 
         if not thread_url:
             print("URL cannot be empty.")
@@ -522,18 +539,24 @@ class ImgHndlrOrchestrator:
             print(f"Created temporary directory at: {tmpdir}")
 
             try:
-                downloader = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
-                downloaded_images: List[str] = downloader.fetch_and_download()
+                # This is where the source should be created based on a flag coming in from the command line, for now it just defaults to ImgDownloader
+                source = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
+                image_paths: List[str] = source.get_images()
             except Exception as e:
-                print(f"Error handling download operations: {e}")
+                print(f"Error handling image source operations: {e}")
                 return
 
-            if not downloaded_images:
-                print("No images were downloaded.")
+            if not image_paths:
+                print("No images were retrieved.")
                 return
 
+            # Spin up Tk
             root: tk.Tk = tk.Tk()
-            app = ImgGalleryUI(root=root, image_paths=downloaded_images)
+
+            # Replace '_' with 'app' when this object is needed in the future
+            _ = ImgGalleryUI(root=root, image_paths=image_paths)
+
+            # Tk... AWAY!
             root.mainloop()
 
             print("GUI closed. Temporary directory is now being cleaned up...")
