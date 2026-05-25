@@ -20,9 +20,6 @@ class ImageSource(ABC):
     paths ready for display in the UI.
     """
 
-    def __init__(self, target_dir: str) -> None:
-        self.target_dir: str = target_dir
-
     @abstractmethod
     def get_images(self) -> List[str]:
         """Return a list of image file paths from the source."""
@@ -130,6 +127,31 @@ class ImgDownloader(ImageSource):
         return image_paths
 
 
+class DirectoryImageSource(ImageSource):
+    """
+    Reads a local directory and exposes image file paths as an image source.
+    """
+
+    SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
+    def __init__(self, directory_path: str) -> None:
+        self.directory_path: str = os.path.abspath(directory_path)
+
+    def get_images(self) -> List[str]:
+        if not os.path.isdir(self.directory_path):
+            raise ValueError("Source directory does not exist or is not a directory.")
+
+        image_paths: List[str] = []
+        for entry in os.listdir(self.directory_path):
+            path = os.path.join(self.directory_path, entry)
+            extension = os.path.splitext(entry)[1].lower()
+            if os.path.isfile(path) and extension in self.SUPPORTED_EXTENSIONS:
+                image_paths.append(path)
+
+        image_paths.sort()
+        return image_paths
+
+
 # TODO: Some sort of zoom functionality
 # TODO: Some sort of scrolling or "window in picture" for nonstandard images, ex. HUGE wallpapers, comics, etc.
 class ImgGalleryUI:
@@ -144,12 +166,13 @@ class ImgGalleryUI:
     * End user directory mapping (for saving files)
     """
     
-    def __init__(self, root: tk.Tk, image_paths: List[str]) -> None:
+    def __init__(self, root: tk.Tk, image_paths: List[str], source_path: Optional[str] = None) -> None:
         """
         Initializes UI workspace, state registers, and active graphics canvas.
 
         :param root: The active tk.Tk() window wrapper context.
         :param image_paths: List of strings, path mappings pointing to downloaded images.
+        :param source_path: Optional source directory path for image files.
         """
         self.root: tk.Tk = root
         self.root.title(string="imghndlr Gallery")
@@ -157,6 +180,7 @@ class ImgGalleryUI:
         self.root.minsize(width=450, height=450)
         
         self.image_paths: List[str] = image_paths
+        self.source_path: Optional[str] = source_path
         self.current_index: int = 0
         self.current_raw_img: Optional[Image.Image] = None
         self.tk_img: Optional[ImageTk.PhotoImage] = None
@@ -436,6 +460,10 @@ class ImgGalleryUI:
         if not target_dir:
             self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
             return
+
+        if self.source_path and os.path.abspath(target_dir) == os.path.abspath(self.source_path):
+            self.status_bar.config(text="⚠ Error: Target directory cannot be the source directory.", fg="#d84315")
+            return
             
         self._save_directory_to_config(target_dir)
 
@@ -468,6 +496,10 @@ class ImgGalleryUI:
         target_dir: str = self.dir_entry.get().strip()
         if not target_dir:
             self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
+            return
+
+        if self.source_path and os.path.abspath(target_dir) == os.path.abspath(self.source_path):
+            self.status_bar.config(text="⚠ Error: Cannot delete from the source directory.", fg="#d84315")
             return
 
         src_path: str = self.image_paths[self.current_index]
@@ -507,9 +539,13 @@ class ImgHndlrOrchestrator:
     def parse_args() -> argparse.Namespace:
         parser = argparse.ArgumentParser(description="Fetch and browse images.")
         parser.add_argument(
+            "--source-dir",
+            help="Local directory containing source images to browse.",
+        )
+        parser.add_argument(
             "thread_url",
             nargs="?",
-            help="4chan thread URL to download images from. If omitted, the program will prompt for it.",
+            help="Thread URL to download images from. Ignored when --source-dir is provided.",
         )
         parser.add_argument(
             "--conf",
@@ -518,7 +554,12 @@ class ImgHndlrOrchestrator:
         )
         return parser.parse_args()
 
-    def run(self, thread_url: Optional[str] = None, use_config: bool = False) -> None:
+    def run(
+        self,
+        thread_url: Optional[str] = None,
+        use_config: bool = False,
+        source_dir: Optional[str] = None,
+    ) -> None:
         """
         Prompts input, constructs handlers, executes operations, and cleans up assets.
 
@@ -527,6 +568,29 @@ class ImgHndlrOrchestrator:
         """
         if use_config:
             ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imghndlr.conf")
+
+        if source_dir and thread_url:
+            print("Please specify either --source-dir or a thread URL, not both.")
+            return
+
+        if source_dir:
+            source_directory = os.path.abspath(source_dir)
+            try:
+                source = DirectoryImageSource(directory_path=source_directory)
+                image_paths: List[str] = source.get_images()
+            except Exception as e:
+                print(f"Error handling image source operations: {e}")
+                return
+
+            if not image_paths:
+                print("No images were found in the source directory.")
+                return
+
+            root: tk.Tk = tk.Tk()
+            app = ImgGalleryUI(root=root, image_paths=image_paths, source_path=source_directory)
+            root.mainloop()
+            print("GUI closed. Goodbye!")
+            return
 
         if not thread_url:
             thread_url = input("Enter thread URL: ").strip()
@@ -539,7 +603,6 @@ class ImgHndlrOrchestrator:
             print(f"Created temporary directory at: {tmpdir}")
 
             try:
-                # This is where the source should be created based on a flag coming in from the command line, for now it just defaults to ImgDownloader
                 source = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
                 image_paths: List[str] = source.get_images()
             except Exception as e:
@@ -547,15 +610,14 @@ class ImgHndlrOrchestrator:
                 return
 
             if not image_paths:
-                print("No images were retrieved.")
+                print("No images were downloaded.")
                 return
 
-            # Spin up Tk
             root: tk.Tk = tk.Tk()
 
             # Replace '_' with 'app' when this object is needed in the future
             _ = ImgGalleryUI(root=root, image_paths=image_paths)
-
+            
             # Tk... AWAY!
             root.mainloop()
 
@@ -570,7 +632,7 @@ class ImgHndlrOrchestrator:
         """
         args = cls.parse_args()
         orchestrator = cls()
-        orchestrator.run(thread_url=args.thread_url, use_config=args.conf)
+        orchestrator.run(thread_url=args.thread_url, use_config=args.conf, source_dir=args.source_dir)
 
 
 if __name__ == "__main__":
