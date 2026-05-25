@@ -5,6 +5,7 @@ import tempfile
 import tkinter as tk
 import json
 from abc import ABC, abstractmethod
+from enum import Enum
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
@@ -166,13 +167,15 @@ class ImgGalleryUI:
     * End user directory mapping (for saving files)
     """
     
-    def __init__(self, root: tk.Tk, image_paths: List[str], source_path: Optional[str] = None) -> None:
+    def __init__(self, root: tk.Tk, image_paths: List[str], source_directory: Optional[str] = None) -> None:
         """
         Initializes UI workspace, state registers, and active graphics canvas.
 
         :param root: The active tk.Tk() window wrapper context.
         :param image_paths: List of strings, path mappings pointing to downloaded images.
-        :param source_path: Optional source directory path for image files.
+        :param source_directory: Optional directory path where the source images are located.
+                                 Used to prevent users from accidentally saving back to the source.
+                                 Not set for temporary 4chan downloads (which we don't protect).
         """
         self.root: tk.Tk = root
         self.root.title(string="imghndlr Gallery")
@@ -180,7 +183,7 @@ class ImgGalleryUI:
         self.root.minsize(width=450, height=450)
         
         self.image_paths: List[str] = image_paths
-        self.source_path: Optional[str] = source_path
+        self.source_directory: Optional[str] = source_directory
         self.current_index: int = 0
         self.current_raw_img: Optional[Image.Image] = None
         self.tk_img: Optional[ImageTk.PhotoImage] = None
@@ -461,7 +464,8 @@ class ImgGalleryUI:
             self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
             return
 
-        if self.source_path and os.path.abspath(target_dir) == os.path.abspath(self.source_path):
+        # Prevent saving back to the source directory (for local directory browsing)
+        if self.source_directory and os.path.abspath(target_dir) == os.path.abspath(self.source_directory):
             self.status_bar.config(text="⚠ Error: Target directory cannot be the source directory.", fg="#d84315")
             return
             
@@ -498,7 +502,8 @@ class ImgGalleryUI:
             self.status_bar.config(text="⚠ Error: Please specify a target directory first.", fg="#d84315")
             return
 
-        if self.source_path and os.path.abspath(target_dir) == os.path.abspath(self.source_path):
+        # Prevent deleting from the source directory (for local directory browsing)
+        if self.source_directory and os.path.abspath(target_dir) == os.path.abspath(self.source_directory):
             self.status_bar.config(text="⚠ Error: Cannot delete from the source directory.", fg="#d84315")
             return
 
@@ -517,6 +522,12 @@ class ImgGalleryUI:
             self.update_save_status()
         except Exception as e:
             self.status_bar.config(text="⚠ Error: Failed to delete file.", fg="#d84315")
+
+
+class SourceType(Enum):
+    """Enumeration of available image source types."""
+    FOURCHAN = "4chan"
+    DIRECTORY = "dir"
 
 
 class ImgHndlrOrchestrator:
@@ -539,100 +550,91 @@ class ImgHndlrOrchestrator:
     def parse_args() -> argparse.Namespace:
         parser = argparse.ArgumentParser(description="Fetch and browse images.")
         parser.add_argument(
-            "--source-dir",
-            help="Local directory containing source images to browse.",
-        )
-        parser.add_argument(
-            "thread_url",
-            nargs="?",
-            help="Thread URL to download images from. Ignored when --source-dir is provided.",
-        )
-        parser.add_argument(
             "--conf",
             action="store_true",
             help="Enable saving the image save directory path to imghndlr.conf.",
+        )
+        parser.add_argument(
+            "--source",
+            choices=[s.value for s in SourceType],
+            required=True,
+            help="Image source type: '4chan' for thread URL or 'dir' for local directory.",
+        )
+        parser.add_argument(
+            "source_input",
+            help="Thread URL (for --source 4chan) or directory path (for --source dir).",
         )
         return parser.parse_args()
 
     def run(
         self,
-        thread_url: Optional[str] = None,
+        image_source: ImageSource,
         use_config: bool = False,
-        source_dir: Optional[str] = None,
     ) -> None:
         """
-        Prompts input, constructs handlers, executes operations, and cleans up assets.
+        Orchestrates the UI display and interaction for a given image source.
 
-        Establishes an isolated context-managed system path, triggers network collection workers,
-        initializes parent tkinter rendering routines, and flushes temporary space upon program exit.
+        :param image_source: An ImageSource object (either DirectoryImageSource or ImgDownloader)
+        :param use_config: Whether to enable config file persistence
         """
         if use_config:
             ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imghndlr.conf")
 
-        if source_dir and thread_url:
-            print("Please specify either --source-dir or a thread URL, not both.")
+        try:
+            image_paths: List[str] = image_source.get_images()
+        except Exception as e:
+            print(f"Error handling image source operations: {e}")
             return
 
-        if source_dir:
-            source_directory = os.path.abspath(source_dir)
-            try:
-                source = DirectoryImageSource(directory_path=source_directory)
-                image_paths: List[str] = source.get_images()
-            except Exception as e:
-                print(f"Error handling image source operations: {e}")
-                return
-
-            if not image_paths:
-                print("No images were found in the source directory.")
-                return
-
-            root: tk.Tk = tk.Tk()
-            app = ImgGalleryUI(root=root, image_paths=image_paths, source_path=source_directory)
-            root.mainloop()
-            print("GUI closed. Goodbye!")
+        if not image_paths:
+            print("No images were found or downloaded.")
             return
 
-        if not thread_url:
-            thread_url = input("Enter thread URL: ").strip()
+        # For directory sources, prevent saving back to the source directory
+        source_directory: Optional[str] = None
+        if isinstance(image_source, DirectoryImageSource):
+            source_directory = image_source.directory_path
 
-        if not thread_url:
-            print("URL cannot be empty.")
-            return
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            print(f"Created temporary directory at: {tmpdir}")
-
-            try:
-                source = ImgDownloader(thread_url=thread_url, target_dir=tmpdir)
-                image_paths: List[str] = source.get_images()
-            except Exception as e:
-                print(f"Error handling image source operations: {e}")
-                return
-
-            if not image_paths:
-                print("No images were downloaded.")
-                return
-
-            root: tk.Tk = tk.Tk()
-
-            # Replace '_' with 'app' when this object is needed in the future
-            _ = ImgGalleryUI(root=root, image_paths=image_paths)
-            
-            # Tk... AWAY!
-            root.mainloop()
-
-            print("GUI closed. Temporary directory is now being cleaned up...")
-
-        print("Cleanup complete. Goodbye!")
+        root: tk.Tk = tk.Tk()
+        app = ImgGalleryUI(root=root, image_paths=image_paths, source_directory=source_directory)
+        root.mainloop()
+        print("GUI closed. Goodbye!")
 
     @classmethod
     def main(cls) -> None:
         """
         Initializes and runs the ImgHndlrOrchestrator using argparse.
+
+        Handles source creation and manages context (e.g., temporary directories for 4chan downloads).
         """
         args = cls.parse_args()
         orchestrator = cls()
-        orchestrator.run(thread_url=args.thread_url, use_config=args.conf, source_dir=args.source_dir)
+
+        # Convert string source to enum
+        source_type = SourceType(args.source)
+
+        # Handle directory source
+        if source_type is SourceType.DIRECTORY:
+            try:
+                source = DirectoryImageSource(directory_path=args.source_input)
+                orchestrator.run(image_source=source, use_config=args.conf)
+            except Exception as e:
+                print(f"Error creating image source: {e}")
+                return
+
+        # Handle 4chan source (with temporary directory context)
+        elif source_type is SourceType.FOURCHAN:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                print(f"Created temporary directory at: {tmpdir}")
+                try:
+                    source = ImgDownloader(thread_url=args.source_input, target_dir=tmpdir)
+                    orchestrator.run(image_source=source, use_config=args.conf)
+                except Exception as e:
+                    print(f"Error creating image source: {e}")
+                    return
+
+                print("Temporary directory is now being cleaned up...")
+            print("Cleanup complete. Goodbye!")
 
 
 if __name__ == "__main__":
