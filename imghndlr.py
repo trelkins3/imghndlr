@@ -30,6 +30,9 @@ class ImgDownloader(ImageSource):
     """
     Handles 4chan API interactions and concurrent image downloading.
 
+    Usage: --source 4chan "<thread_url>"
+    Example: --source 4chan "https://boards.4channel.org/b/thread/123456789"
+
     * Takes a standard 4chan thread URL and identifies relevant board and thread identifiers
     * Fetches JSON payload from 4chan data API
     * Uses threads to concurrently download media assets into a target directory
@@ -128,9 +131,192 @@ class ImgDownloader(ImageSource):
         return image_paths
 
 
+class RedditImageSourcePRAW(ImageSource):
+    """
+    Handles Reddit API interactions via PRAW (Python Reddit API Wrapper).
+
+    NOTE: This is a reference implementation for using the official Reddit API.
+    Reddit's official recommendation is to use PRAW for production Reddit API access.
+
+    For authentication and higher rate limits, users can implement this using:
+    - PRAW library: https://praw.readthedocs.io/
+    - Setup: Requires API credentials from https://www.reddit.com/prefs/apps
+    - Environment variables: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT
+
+    Currently, imghndlr uses RedditImageSource instead, which fetches from
+    Reddit's public JSON endpoints without authentication. This is simpler for
+    end users but subject to Reddit's unauthenticated rate limits.
+
+    To implement this class:
+    1. Install PRAW: pip install praw
+    2. Create a Reddit app: https://www.reddit.com/prefs/apps
+    3. Set environment variables with your credentials
+    4. Implement the methods below following the RedditImageSource pattern
+    """
+
+    def get_images(self) -> List[str]:
+        raise NotImplementedError(
+            "RedditImageSourcePRAW is not implemented. "
+            "Use --source reddit with RedditImageSource instead (no setup required), "
+            "or implement this class using PRAW for authenticated access. "
+            "See class docstring for details."
+        )
+
+
+class RedditImageSource(ImageSource):
+    """
+    Handles Reddit API interactions using public JSON endpoints and concurrent image downloading.
+
+    Usage: --source reddit "<subreddit_name>"
+    Example: --source reddit cats
+    Note: Use only the subreddit name (without 'r/' prefix). No API credentials required.
+
+    * Fetches top posts from the past week
+    * No credentials required; uses Reddit's public JSON endpoints
+    * Extracts image URLs from various post types (direct images, galleries, external links)
+    * Uses threads to concurrently download images into a target directory
+    """
+
+    REDDIT_BASE_URL = "https://www.reddit.com"
+    SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+    def __init__(self, subreddit_name: str, target_dir: str) -> None:
+        """
+        Initializes the image source with a subreddit name and target directory.
+
+        :param subreddit_name: Name of the subreddit to fetch images from (just the name, e.g. 'cats', not 'r/cats')
+        :param target_dir: Local filesystem path where images should be saved
+        """
+        self.subreddit_name: str = subreddit_name
+        self.target_dir: str = target_dir
+
+    def _download_single_image(self, url: str, filename: str) -> Tuple[str, str]:
+        """
+        Downloads a single image from a URL.
+
+        :param url: The URL of the image to download
+        :param filename: The filename to save as
+        :return: A tuple containing (local_path, filename)
+        :raises Exception: If the download fails
+        """
+        local_path: str = os.path.join(self.target_dir, filename)
+
+        try:
+            img_data: bytes = requests.get(url=url, timeout=10).content
+            with open(local_path, "wb") as f:
+                f.write(img_data)
+            return local_path, filename
+        except Exception as e:
+            raise Exception(f"Failed to download {url}: {e}")
+
+    def _extract_image_urls(self, post_data: Dict[str, Any]) -> List[Tuple[str, str]]:
+        """
+        Extracts image URLs from a Reddit post JSON object.
+
+        Handles various content types:
+        - Direct image posts (i.redd.it, imgur, etc.)
+        - Reddit galleries (multi-image posts)
+        - External image links
+
+        :param post_data: A post data dictionary from Reddit JSON API
+        :return: List of (url, filename) tuples
+        """
+        urls: List[Tuple[str, str]] = []
+        post_id: str = post_data.get("id", "unknown")
+        post_url: str = post_data.get("url", "")
+
+        # Handle direct image posts
+        if post_url.endswith(tuple(self.SUPPORTED_IMAGE_EXTENSIONS)):
+            filename = os.path.basename(post_url).split("?")[0] or f"{post_id}.jpg"
+            urls.append((post_url, filename))
+        # Handle Reddit galleries (multi-image posts)
+        elif post_data.get("gallery_data"):
+            gallery_data = post_data["gallery_data"]
+            if isinstance(gallery_data, dict) and "items" in gallery_data:
+                for idx, item in enumerate(gallery_data["items"]):
+                    media_id = item.get("media_id")
+                    if media_id:
+                        url = f"https://i.redd.it/{media_id}.jpg"
+                        urls.append((url, f"{post_id}_{idx}.jpg"))
+        # Handle i.redd.it and other direct image hosting
+        elif "i.redd.it" in post_url or "imgur.com" in post_url:
+            # Remove tracking parameters
+            clean_url = post_url.split("?")[0]
+            if clean_url.endswith(tuple(self.SUPPORTED_IMAGE_EXTENSIONS)):
+                filename = os.path.basename(clean_url) or f"{post_id}.jpg"
+                urls.append((clean_url, filename))
+
+        return urls
+
+    def get_images(self) -> List[str]:
+        """
+        Orchestrates fetching and downloading images from a subreddit.
+
+        Fetches top posts from the past week via Reddit's public JSON API,
+        extracts image URLs, and downloads them concurrently.
+
+        :return: List of local file paths to downloaded images
+        :raises Exception: If API calls or downloads fail
+        """
+        try:
+            api_url = f"{self.REDDIT_BASE_URL}/r/{self.subreddit_name}/top.json?t=week&limit=100"
+            print(f"Fetching posts from r/{self.subreddit_name}...")
+
+            # Set a proper User-Agent to avoid being blocked
+            headers = {"User-Agent": "imghndlr/1.0"}
+            response = requests.get(url=api_url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+            posts = data.get("data", {}).get("children", [])
+
+            image_urls: List[Tuple[str, str]] = []
+            for post in posts:
+                post_data = post.get("data", {})
+                urls = self._extract_image_urls(post_data)
+                image_urls.extend(urls)
+
+            total_images: int = len(image_urls)
+            if total_images == 0:
+                return []
+
+            print(f"Found {total_images} images. Starting concurrent downloads...\n")
+
+            image_paths: List[str] = []
+            completed_count: int = 0
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_url = {
+                    executor.submit(self._download_single_image, url, filename): (url, filename)
+                    for url, filename in image_urls
+                }
+
+                for future in as_completed(future_to_url):
+                    completed_count += 1
+                    url, filename = future_to_url[future]
+                    try:
+                        local_path, _ = future.result()
+                        image_paths.append(local_path)
+                        print(f"[{completed_count}/{total_images}] Downloaded: {filename}")
+                    except Exception as e:
+                        print(f"[{completed_count}/{total_images}] Failed to download {filename}: {e}")
+
+            print(f"\nSuccessfully downloaded {len(image_paths)}/{total_images} images.")
+            image_paths.sort()
+            return image_paths
+
+        except Exception as e:
+            raise Exception(f"Error fetching from Reddit: {e}")
+
+
 class DirectoryImageSource(ImageSource):
     """
     Reads a local directory and exposes image file paths as an image source.
+
+    Usage: --source dir "<path>"
+    Example: --source dir "/home/user/Pictures" or --source dir "C:\\Users\\user\\Pictures"
+
+    Supports: .jpg, .jpeg, .png, .gif, .bmp, .webp, .tiff, .tif
     """
 
     SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
@@ -528,6 +714,7 @@ class SourceType(Enum):
     """Enumeration of available image source types."""
     FOURCHAN = "4chan"
     DIRECTORY = "dir"
+    REDDIT = "reddit"
 
 
 class ImgHndlrOrchestrator:
@@ -548,7 +735,15 @@ class ImgHndlrOrchestrator:
 
     @staticmethod
     def parse_args() -> argparse.Namespace:
-        parser = argparse.ArgumentParser(description="Fetch and browse images.")
+        parser = argparse.ArgumentParser(
+            description="Fetch and browse images from various sources.",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""Examples:
+  python imghndlr.py --source 4chan "https://boards.4channel.org/wg/thread/<id>"
+  python imghndlr.py --source dir "/path/to/images"
+  python imghndlr.py --source reddit cats
+            """
+        )
         parser.add_argument(
             "--conf",
             action="store_true",
@@ -558,11 +753,11 @@ class ImgHndlrOrchestrator:
             "--source",
             choices=[s.value for s in SourceType],
             required=True,
-            help="Image source type: '4chan' for thread URL or 'dir' for local directory.",
+            help="Image source type: '4chan' (4chan thread), 'dir' (local directory), or 'reddit' (subreddit).",
         )
         parser.add_argument(
             "source_input",
-            help="Thread URL (for --source 4chan) or directory path (for --source dir).",
+            help="Source-specific input: Full 4chan thread URL | Local directory path | Subreddit name (without 'r/').",
         )
         return parser.parse_args()
 
@@ -628,6 +823,20 @@ class ImgHndlrOrchestrator:
                 print(f"Created temporary directory at: {tmpdir}")
                 try:
                     source = ImgDownloader(thread_url=args.source_input, target_dir=tmpdir)
+                    orchestrator.run(image_source=source, use_config=args.conf)
+                except Exception as e:
+                    print(f"Error creating image source: {e}")
+                    return
+
+                print("Temporary directory is now being cleaned up...")
+            print("Cleanup complete. Goodbye!")
+
+        # Handle Reddit source (with temporary directory context)
+        elif source_type is SourceType.REDDIT:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                print(f"Created temporary directory at: {tmpdir}")
+                try:
+                    source = RedditImageSource(subreddit_name=args.source_input, target_dir=tmpdir)
                     orchestrator.run(image_source=source, use_config=args.conf)
                 except Exception as e:
                     print(f"Error creating image source: {e}")
