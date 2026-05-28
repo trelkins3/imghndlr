@@ -1,6 +1,8 @@
 import argparse
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import tkinter as tk
 import json
@@ -379,6 +381,7 @@ class ImgGalleryUI:
         self.dir_entry: tk.Entry
         self.save_btn: tk.Button
         self.delete_btn: tk.Button
+        self.reveal_btn: tk.Button
         self.prev_btn: tk.Button
         self.status_label: tk.Label
         self.next_btn: tk.Button
@@ -447,6 +450,9 @@ class ImgGalleryUI:
         
         self.delete_btn = tk.Button(master=save_frame, text="Delete (Del)", command=self.delete_current_image, bg="#f44336", fg="white")
         self.delete_btn.pack(side="left", padx=5)
+
+        self.reveal_btn = tk.Button(master=save_frame, text="Reveal (R)", command=self.reveal_current_image, bg="#2196F3", fg="white")
+        self.reveal_btn.pack(side="left", padx=5)
         
         # 3. Navigation Controls Frame (Above Save Frame)
         nav_frame = tk.Frame(master=self.root)
@@ -457,6 +463,9 @@ class ImgGalleryUI:
         
         self.status_label = tk.Label(master=nav_frame, text="", font=("Arial", 12))
         self.status_label.pack(side="left", expand=True)
+
+        self.file_info_label = tk.Label(master=nav_frame, text="", font=("Arial", 10), fg="#555555")
+        self.file_info_label.pack(side="left", padx=10)
         
         self.next_btn = tk.Button(master=nav_frame, text="Right ▶", command=self.show_next, width=10)
         self.next_btn.pack(side="right", padx=20)
@@ -473,6 +482,8 @@ class ImgGalleryUI:
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
         self.root.bind(sequence="<Delete>", func=self._handle_delete_key)
+        self.root.bind(sequence="r", func=self._handle_reveal_key)
+        self.root.bind(sequence="R", func=self._handle_reveal_key)
         
         # Bind Escape key to exit the UI application window context
         self.root.bind(sequence="<Escape>", func=self._handle_escape_key)
@@ -523,12 +534,14 @@ class ImgGalleryUI:
             
         self.status_label.config(text=f"Image {self.current_index + 1} of {len(self.image_paths)}")
         img_path: str = self.image_paths[self.current_index]
+        filename = os.path.basename(img_path)
+        self.file_info_label.config(text=filename)
         
         try:
             self.current_raw_img = Image.open(fp=img_path)
         except Exception:
             self.current_raw_img = None
-            self.image_label.config(image="", text=f"Error loading image:\n{os.path.basename(img_path)}")
+            self.image_label.config(image="", text=f"Error loading image:\n{filename}")
             
         self.render_scaled_image()
         self.update_save_status()
@@ -610,6 +623,16 @@ class ImgGalleryUI:
         """
         if self.root.focus_get() != self.dir_entry:
             self.delete_current_image()
+
+    def _handle_reveal_key(self, event: tk.Event) -> None:
+        """
+        Event binding bridge routing the R key to the reveal operation.
+
+        Ignores execution calls if the user is explicitly focused on editing text inside the
+        target path input box.
+        """
+        if self.root.focus_get() != self.dir_entry:
+            self.reveal_current_image()
 
     def _handle_escape_key(self, event: tk.Event) -> None:
         """
@@ -708,6 +731,36 @@ class ImgGalleryUI:
             self.update_save_status()
         except Exception as e:
             self.status_bar.config(text="⚠ Error: Failed to delete file.", fg="#d84315")
+
+    def reveal_current_image(self) -> None:
+        """
+        Opens the current image in the system file browser if it exists in the target directory.
+
+        If the image is not yet saved in the target directory, this method does nothing.
+        """
+        if not self.image_paths:
+            return
+
+        target_dir: str = self.dir_entry.get().strip()
+        if not target_dir:
+            return
+
+        src_path: str = self.image_paths[self.current_index]
+        filename: str = os.path.basename(src_path)
+        dest_path: str = os.path.join(target_dir, filename)
+
+        if not os.path.exists(dest_path):
+            return
+
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(dest_path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", "-R", dest_path], check=False)
+            else:
+                subprocess.run(["xdg-open", os.path.dirname(dest_path)], check=False)
+        except Exception:
+            pass
 
 
 class SourceType(Enum):
