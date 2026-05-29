@@ -11,6 +11,7 @@ from enum import Enum
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
+from contextlib import ExitStack
 import requests
 from PIL import Image, ImageTk
 
@@ -28,7 +29,7 @@ class ImageSource(ABC):
         """Return a list of image file paths from the source."""
 
 
-class ImgDownloader(ImageSource):
+class FourChanImageSource(ImageSource):
     """
     Handles 4chan API interactions and concurrent image downloading.
 
@@ -822,7 +823,7 @@ class ImgHndlrOrchestrator:
         """
         Orchestrates the UI display and interaction for a given image source.
 
-        :param image_source: An ImageSource object (either DirectoryImageSource or ImgDownloader)
+        :param image_source: An ImageSource object (either DirectoryImageSource or FourChanImageSource)
         :param use_config: Whether to enable config file persistence
         """
         if use_config:
@@ -846,14 +847,13 @@ class ImgHndlrOrchestrator:
         root: tk.Tk = tk.Tk()
         app = ImgGalleryUI(root=root, image_paths=image_paths, source_directory=source_directory)
         root.mainloop()
-        print("GUI closed. Goodbye!")
+        print("GUI closed.")
 
     @classmethod
     def main(cls) -> None:
         """
-        Initializes and runs the ImgHndlrOrchestrator using argparse.
-
-        Handles source creation and manages context (e.g., temporary directories for 4chan downloads).
+        Initializes and runs the main program orchestrator. Handles source creation and manages 
+        context (e.g., temporary directories for download-based sources).
         """
         args = cls.parse_args()
         orchestrator = cls()
@@ -861,41 +861,27 @@ class ImgHndlrOrchestrator:
         # Convert string source to enum
         source_type = SourceType(args.source)
 
-        # Handle directory source
-        if source_type is SourceType.DIRECTORY:
-            try:
-                source = DirectoryImageSource(directory_path=args.source_input)
-                orchestrator.run(image_source=source, use_config=args.conf)
-            except Exception as e:
-                print(f"Error creating image source: {e}")
-                return
-
-        # Handle 4chan source (with temporary directory context)
-        elif source_type is SourceType.FOURCHAN:
-            with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = None
+        with ExitStack() as stack:
+            # Some sources require temporary directories for downloads; create and manage here to ensure proper cleanup
+            if source_type in (SourceType.FOURCHAN, SourceType.REDDIT):
+                tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
                 print(f"Created temporary directory at: {tmpdir}")
-                try:
-                    source = ImgDownloader(thread_url=args.source_input, target_dir=tmpdir)
-                    orchestrator.run(image_source=source, use_config=args.conf)
-                except Exception as e:
-                    print(f"Error creating image source: {e}")
-                    return
+                stack.callback(lambda: print("Temporary directory is now being cleaned up..."))
 
-                print("Temporary directory is now being cleaned up...")
-            print("Cleanup complete. Goodbye!")
-
-        # Handle Reddit source (with temporary directory context)
-        elif source_type is SourceType.REDDIT:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                print(f"Created temporary directory at: {tmpdir}")
-                try:
+            match source_type:
+                case SourceType.DIRECTORY:
+                    source = DirectoryImageSource(directory_path=args.source_input)
+                case SourceType.FOURCHAN:
+                    source = FourChanImageSource(thread_url=args.source_input, target_dir=tmpdir)
+                case SourceType.REDDIT:
                     source = RedditImageSource(subreddit_name=args.source_input, target_dir=tmpdir)
-                    orchestrator.run(image_source=source, use_config=args.conf)
-                except Exception as e:
-                    print(f"Error creating image source: {e}")
-                    return
+                case _:
+                    raise AssertionError("Unsupported source type. This should never happen due to argparse choices.")
 
-                print("Temporary directory is now being cleaned up...")
+            orchestrator.run(image_source=source, use_config=args.conf)
+
+        if tmpdir is not None:
             print("Cleanup complete. Goodbye!")
 
 
