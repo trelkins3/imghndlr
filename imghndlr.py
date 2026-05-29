@@ -817,53 +817,22 @@ class ImgHndlrOrchestrator:
 
     def run(
         self,
-        image_source: ImageSource,
+        source_type: SourceType,
+        source_input: str,
         use_config: bool = False,
     ) -> None:
         """
-        Orchestrates the UI display and interaction for a given image source.
+        Orchestrates the workflow for a given source type and input.
 
-        :param image_source: An ImageSource object (either DirectoryImageSource or FourChanImageSource)
+        :param source_type: The resolved source type enum.
+        :param source_input: The source-specific input string.
         :param use_config: Whether to enable config file persistence
         """
         if use_config:
             ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imghndlr.conf")
 
-        try:
-            image_paths: List[str] = image_source.get_images()
-        except Exception as e:
-            print(f"Error handling image source operations: {e}")
-            return
-
-        if not image_paths:
-            print("No images were found or downloaded.")
-            return
-
-        # For directory sources, prevent saving back to the source directory
-        source_directory: Optional[str] = None
-        if isinstance(image_source, DirectoryImageSource):
-            source_directory = image_source.directory_path
-
-        root: tk.Tk = tk.Tk()
-        app = ImgGalleryUI(root=root, image_paths=image_paths, source_directory=source_directory)
-        root.mainloop()
-        print("GUI closed.")
-
-    @classmethod
-    def main(cls) -> None:
-        """
-        Initializes and runs the main program orchestrator. Handles source creation and manages 
-        context (e.g., temporary directories for download-based sources).
-        """
-        args = cls.parse_args()
-        orchestrator = cls()
-
-        # Convert string source to enum
-        source_type = SourceType(args.source)
-
         tmpdir = None
         with ExitStack() as stack:
-            # Some sources require temporary directories for downloads; create and manage here to ensure proper cleanup
             if source_type in (SourceType.FOURCHAN, SourceType.REDDIT):
                 tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
                 print(f"Created temporary directory at: {tmpdir}")
@@ -871,18 +840,46 @@ class ImgHndlrOrchestrator:
 
             match source_type:
                 case SourceType.DIRECTORY:
-                    source = DirectoryImageSource(directory_path=args.source_input)
+                    source = DirectoryImageSource(directory_path=source_input)
                 case SourceType.FOURCHAN:
-                    source = FourChanImageSource(thread_url=args.source_input, target_dir=tmpdir)
+                    source = FourChanImageSource(thread_url=source_input, target_dir=tmpdir)
                 case SourceType.REDDIT:
-                    source = RedditImageSource(subreddit_name=args.source_input, target_dir=tmpdir)
+                    source = RedditImageSource(subreddit_name=source_input, target_dir=tmpdir)
                 case _:
                     raise AssertionError("Unsupported source type. This should never happen due to argparse choices.")
 
-            orchestrator.run(image_source=source, use_config=args.conf)
+            try:
+                image_paths: List[str] = source.get_images()
+            except Exception as e:
+                print(f"Error handling image source operations: {e}")
+                return
+
+            if not image_paths:
+                print("No images were found or downloaded.")
+                return
+
+            source_directory: Optional[str] = None
+            if isinstance(source, DirectoryImageSource):
+                source_directory = source.directory_path
+
+            root: tk.Tk = tk.Tk()
+            app = ImgGalleryUI(root=root, image_paths=image_paths, source_directory=source_directory)
+            root.mainloop()
+            print("GUI closed.")
 
         if tmpdir is not None:
             print("Cleanup complete. Goodbye!")
+
+    @classmethod
+    def main(cls) -> None:
+        """
+        Parses CLI arguments and delegates orchestration to run().
+        """
+        args = cls.parse_args()
+        source_type = SourceType(args.source)
+        
+        orchestrator = cls()
+        orchestrator.run(source_type=source_type, source_input=args.source_input, use_config=args.conf)
 
 
 if __name__ == "__main__":
