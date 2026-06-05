@@ -66,8 +66,11 @@ class ImgHndlrOrchestrator:
         :param source_input: The source-specific input string.
         :param use_config: Whether to enable config file persistence
         """
-        from imghndlr_sources import (DirectoryImageSource,
-                                      FourChanImageSource, RedditImageSource)
+        from imghndlr_sources import (
+            DirectoryImageSource,
+            FourChanImageSource,
+            RedditImageSource,
+        )
 
         if use_config:
             ImgHndlrOrchestrator.CONFIG_FILE = os.path.join(
@@ -114,7 +117,7 @@ class ImgHndlrOrchestrator:
                 source_directory = source.directory_path
 
             root: tk.Tk = tk.Tk()
-            app = ImgGalleryUI(
+            _ = ImgGalleryUI(
                 root=root,
                 image_paths=image_paths,
                 source_directory=source_directory,

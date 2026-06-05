@@ -4,10 +4,12 @@ import shutil
 import subprocess
 import sys
 import tkinter as tk
-from PIL import Image, ImageTk
 from typing import List, Optional
 
+from PIL import Image, ImageTk
+
 __all__ = ["ImgGalleryUI"]
+
 
 # TODO: Some sort of zoom functionality
 # TODO: Some sort of scrolling or "window in picture" for nonstandard images, ex. HUGE wallpapers, comics, etc.
