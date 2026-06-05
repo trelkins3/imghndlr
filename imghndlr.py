@@ -5,7 +5,7 @@ import tkinter as tk
 from contextlib import ExitStack
 from typing import List, Optional
 
-from imghndlr_sources import SourceType
+from imghndlr_sources import ImageSource, SourceType
 from imghndlr_ui import ImgGalleryUI
 
 
@@ -86,14 +86,17 @@ class ImgHndlrOrchestrator:
                     lambda: print("Temporary directory is now being cleaned up...")
                 )
 
+            source: ImageSource
             match source_type:
                 case SourceType.DIRECTORY:
                     source = DirectoryImageSource(directory_path=source_input)
                 case SourceType.FOURCHAN:
+                    assert tmpdir is not None
                     source = FourChanImageSource(
                         thread_url=source_input, target_dir=tmpdir
                     )
                 case SourceType.REDDIT:
+                    assert tmpdir is not None
                     source = RedditImageSource(
                         subreddit_name=source_input, target_dir=tmpdir
                     )

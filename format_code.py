@@ -26,12 +26,12 @@ def run_module(module: str, args: list[str]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run black and isort on the repository."
+        description="Run black, isort, and mypy on the repository."
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Run black and isort in check mode without modifying files.",
+        help="Run black and isort in check mode without modifying files. mypy always checks types.",
     )
     args = parser.parse_args()
 
@@ -41,6 +41,7 @@ def main() -> int:
     exit_codes = []
     exit_codes.append(run_module("isort", common_args + target))
     exit_codes.append(run_module("black", common_args + target))
+    exit_codes.append(run_module("mypy", target))
 
     if any(code != 0 for code in exit_codes):
         print("\nOne or more formatting tools failed.")
