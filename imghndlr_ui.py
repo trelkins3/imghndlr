@@ -4,9 +4,11 @@ import shutil
 import subprocess
 import sys
 import tkinter as tk
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from PIL import Image, ImageTk
+
+from handler_plugin import Dataset
 
 __all__ = ["ImgGalleryUI"]
 
@@ -31,6 +33,7 @@ class ImgGalleryUI:
         image_paths: List[str],
         source_directory: Optional[str] = None,
         config_file: Optional[str] = None,
+        dataset: Optional[Dataset] = None,
     ) -> None:
         """
         Initializes UI workspace, state registers, and active graphics canvas.
@@ -40,6 +43,7 @@ class ImgGalleryUI:
         :param source_directory: Optional directory path where the source images are located.
                                  Used to prevent users from accidentally saving back to the source.
                                  Not set for temporary 4chan downloads (which we don't protect).
+        :param dataset: Optional Dataset containing image metadata.
         """
         self.root: tk.Tk = root
         self.root.title(string="imghndlr Gallery")
@@ -49,6 +53,7 @@ class ImgGalleryUI:
         self.image_paths: List[str] = image_paths
         self.source_directory: Optional[str] = source_directory
         self.config_file: Optional[str] = config_file
+        self.dataset: Optional[Dataset] = dataset
         self.current_index: int = 0
         self.current_raw_img: Optional[Image.Image] = None
         self.tk_img: Optional[ImageTk.PhotoImage] = None
@@ -63,6 +68,8 @@ class ImgGalleryUI:
         self.status_label: tk.Label
         self.next_btn: tk.Button
         self.image_label: tk.Label
+        self.metadata_frame: tk.Frame
+        self.metadata_labels: Dict[str, tk.Label] = {}
 
         if not self.image_paths:
             self._show_empty_message()
@@ -118,7 +125,11 @@ class ImgGalleryUI:
         )
         self.status_bar.pack(side="bottom", fill="x")
 
-        # 2. Save Input Frame (Above Status Bar)
+        # 2. Metadata Panel (Above Status Bar, if dataset available)
+        self.metadata_frame = tk.Frame(master=self.root, bg="#f5f5f5", pady=5)
+        self.metadata_frame.pack(side="bottom", fill="x", padx=20)
+
+        # 2a. Save Input Frame (Above Metadata Frame)
         save_frame = tk.Frame(master=self.root)
         save_frame.pack(side="bottom", fill="x", pady=5, padx=20)
 
@@ -261,6 +272,7 @@ class ImgGalleryUI:
 
         self.render_scaled_image()
         self.update_save_status()
+        self._update_window_title_and_metadata()
 
     def render_scaled_image(self) -> None:
         """
@@ -293,6 +305,105 @@ class ImgGalleryUI:
         :param event: The Tkinter configuration event details triggered by GUI window resizing.
         """
         self.render_scaled_image()
+
+    def _update_window_title_and_metadata(self) -> None:
+        """
+        Updates the window title with current image info and displays metadata panel.
+        
+        Window title shows: imghndlr Gallery - filename (WxH) | size KB
+        Metadata panel shows all available metadata from the dataset if available.
+        """
+        if not self.image_paths or self.current_index >= len(self.image_paths):
+            return
+
+        img_path = self.image_paths[self.current_index]
+        filename = os.path.basename(img_path)
+        
+        # Build window title with image dimensions and file size
+        title_parts = ["imghndlr Gallery"]
+        if self.current_raw_img:
+            w, h = self.current_raw_img.size
+            title_parts.append(f"{filename} ({w}x{h})")
+        else:
+            title_parts.append(filename)
+        
+        # Add file size if available from metadata or filesystem
+        try:
+            file_size_kb = os.path.getsize(img_path) / 1024
+            title_parts.append(f"{file_size_kb:.1f}KB")
+        except Exception:
+            pass
+        
+        self.root.title(" | ".join(title_parts))
+        
+        # Update metadata frame
+        self._update_metadata_display()
+
+    def _update_metadata_display(self) -> None:
+        """
+        Clears and rebuilds the metadata display frame with current image data.
+        """
+        # Clear existing metadata labels
+        for label in self.metadata_labels.values():
+            label.destroy()
+        self.metadata_labels.clear()
+        
+        if not self.dataset or not self.image_paths or self.current_index >= len(self.image_paths):
+            return
+        
+        img_path = self.image_paths[self.current_index]
+        metadata = self.dataset.get_metadata_for_image(img_path)
+        
+        if not metadata:
+            return
+        
+        display_entries = []
+
+        # Build dimensions entry if width/height are present
+        if "width" in metadata and "height" in metadata:
+            display_entries.append(("Dimensions", f"{metadata['width']}x{metadata['height']}"))
+
+        # Build disk size entry if disk_size_kb is available
+        if "disk_size_kb" in metadata:
+            display_entries.append(("Disk Size", self._format_disk_size(metadata["disk_size_kb"])))
+
+        # Display all other metadata keys except width/height and raw disk size
+        for key, value in metadata.items():
+            if key.startswith("error"):
+                continue
+            if key in {"width", "height", "disk_size_kb"}:
+                continue
+            if key == "dimensions" or key == "disk_size":
+                continue
+
+            display_key = key.replace("_", " ").title()
+            display_value = str(value)
+            display_entries.append((display_key, display_value))
+
+        for display_key, display_value in display_entries:
+            label_text = f"{display_key}: {display_value}"
+            label = tk.Label(
+                master=self.metadata_frame,
+                text=label_text,
+                font=("Arial", 9),
+                bg="#f5f5f5",
+                fg="#333333",
+                anchor="w",
+            )
+            label.pack(side="left", padx=10)
+            self.metadata_labels[display_key] = label
+
+    def _format_disk_size(self, size_kb: float) -> str:
+        """
+        Converts disk size in kilobytes to the most relevant human-readable unit.
+        """
+        size_bytes = size_kb * 1024
+        units = [("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024), ("B", 1)]
+        for suffix, threshold in units:
+            if size_bytes >= threshold and threshold > 0:
+                value = size_bytes / threshold
+                return f"{value:.1f}{suffix.lower()}"
+        return f"{size_bytes:.1f}b"
 
     def show_prev(self) -> None:
         """

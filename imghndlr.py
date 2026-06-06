@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from imghndlr_sources import ImageSource, SourceType
 from imghndlr_ui import ImgGalleryUI
+from handler_plugin import ImageAnalyzerHandler, ImageExifHandler, SimpleDataset
 
 
 class ImgHndlrOrchestrator:
@@ -119,12 +120,19 @@ class ImgHndlrOrchestrator:
             if isinstance(source, DirectoryImageSource):
                 source_directory = source.directory_path
 
+            # Run visual analysis only for now. EXIF handler is disabled pending debug.
+            print("Analyzing images...")
+            analyzer = ImageAnalyzerHandler()
+            dataset = analyzer.handle(image_paths)
+            print(f"Visual analysis complete.")
+
             root: tk.Tk = tk.Tk()
             _ = ImgGalleryUI(
                 root=root,
                 image_paths=image_paths,
                 source_directory=source_directory,
                 config_file=ImgHndlrOrchestrator.CONFIG_FILE,
+                dataset=dataset,
             )
             root.mainloop()
             print("GUI closed.")
