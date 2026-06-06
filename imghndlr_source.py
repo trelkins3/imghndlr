@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
+
 import requests
 
 

@@ -4,11 +4,11 @@ import shutil
 import subprocess
 import sys
 import tkinter as tk
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from PIL import Image, ImageTk
 
-from handler_plugin import Dataset
+from imghndlr_plugin import Dataset
 
 __all__ = ["ImgGalleryUI"]
 
@@ -309,7 +309,7 @@ class ImgGalleryUI:
     def _update_window_title_and_metadata(self) -> None:
         """
         Updates the window title with current image info and displays metadata panel.
-        
+
         Window title shows: imghndlr Gallery - filename (WxH) | size KB
         Metadata panel shows all available metadata from the dataset if available.
         """
@@ -318,7 +318,7 @@ class ImgGalleryUI:
 
         img_path = self.image_paths[self.current_index]
         filename = os.path.basename(img_path)
-        
+
         # Build window title with image dimensions and file size
         title_parts = ["imghndlr Gallery"]
         if self.current_raw_img:
@@ -326,16 +326,16 @@ class ImgGalleryUI:
             title_parts.append(f"{filename} ({w}x{h})")
         else:
             title_parts.append(filename)
-        
+
         # Add file size if available from metadata or filesystem
         try:
             file_size_kb = os.path.getsize(img_path) / 1024
             title_parts.append(f"{file_size_kb:.1f}KB")
         except Exception:
             pass
-        
+
         self.root.title(" | ".join(title_parts))
-        
+
         # Update metadata frame
         self._update_metadata_display()
 
@@ -347,25 +347,33 @@ class ImgGalleryUI:
         for label in self.metadata_labels.values():
             label.destroy()
         self.metadata_labels.clear()
-        
-        if not self.dataset or not self.image_paths or self.current_index >= len(self.image_paths):
+
+        if (
+            not self.dataset
+            or not self.image_paths
+            or self.current_index >= len(self.image_paths)
+        ):
             return
-        
+
         img_path = self.image_paths[self.current_index]
         metadata = self.dataset.get_metadata_for_image(img_path)
-        
+
         if not metadata:
             return
-        
+
         display_entries = []
 
         # Build dimensions entry if width/height are present
         if "width" in metadata and "height" in metadata:
-            display_entries.append(("Dimensions", f"{metadata['width']}x{metadata['height']}"))
+            display_entries.append(
+                ("Dimensions", f"{metadata['width']}x{metadata['height']}")
+            )
 
         # Build disk size entry if disk_size_kb is available
         if "disk_size_kb" in metadata:
-            display_entries.append(("Disk Size", self._format_disk_size(metadata["disk_size_kb"])))
+            display_entries.append(
+                ("Disk Size", self._format_disk_size(metadata["disk_size_kb"]))
+            )
 
         # Display all other metadata keys except width/height and raw disk size
         for key, value in metadata.items():
@@ -398,7 +406,7 @@ class ImgGalleryUI:
         Converts disk size in kilobytes to the most relevant human-readable unit.
         """
         size_bytes = size_kb * 1024
-        units = [("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024), ("B", 1)]
+        units = [("GB", 1024**3), ("MB", 1024**2), ("KB", 1024), ("B", 1)]
         for suffix, threshold in units:
             if size_bytes >= threshold and threshold > 0:
                 value = size_bytes / threshold
@@ -577,7 +585,7 @@ class ImgGalleryUI:
                 text="✓ Image deleted from destination.", fg="#2e7d32"
             )
             self.update_save_status()
-        except Exception as e:
+        except Exception:
             self.status_bar.config(text="⚠ Error: Failed to delete file.", fg="#d84315")
 
     def reveal_current_image(self) -> None:

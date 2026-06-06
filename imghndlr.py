@@ -5,9 +5,9 @@ import tkinter as tk
 from contextlib import ExitStack
 from typing import List, Optional
 
-from imghndlr_sources import ImageSource, SourceType
+from imghndlr_plugin import ImageAnalyzerHandler
+from imghndlr_source import ImageSource, SourceType
 from imghndlr_ui import ImgGalleryUI
-from handler_plugin import ImageAnalyzerHandler, ImageExifHandler, SimpleDataset
 
 
 class ImgHndlrOrchestrator:
@@ -67,7 +67,7 @@ class ImgHndlrOrchestrator:
         :param source_input: The source-specific input string.
         :param use_config: Whether to enable config file persistence
         """
-        from imghndlr_sources import (
+        from imghndlr_source import (
             DirectoryImageSource,
             FourChanImageSource,
             RedditImageSource,
@@ -124,7 +124,7 @@ class ImgHndlrOrchestrator:
             print("Analyzing images...")
             analyzer = ImageAnalyzerHandler()
             dataset = analyzer.handle(image_paths)
-            print(f"Visual analysis complete.")
+            print("Visual analysis complete.")
 
             root: tk.Tk = tk.Tk()
             _ = ImgGalleryUI(

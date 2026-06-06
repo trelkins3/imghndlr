@@ -185,7 +185,7 @@ class ImageAnalyzerHandler(HandlerPlugin):
     def __init__(self) -> None:
         super().__init__(
             name="image_analyzer",
-            description="Extracts visual metadata from images (dimensions, size, color mode, etc.)"
+            description="Extracts visual metadata from images (dimensions, size, color mode, etc.)",
         )
 
     def handle(self, image_paths: List[str]) -> SimpleDataset:
@@ -205,23 +205,24 @@ class ImageAnalyzerHandler(HandlerPlugin):
                 aspect_ratio = width / height if height > 0 else 0
                 disk_size_bytes = os.path.getsize(image_path)
                 disk_size_kb = round(disk_size_bytes / 1024, 2)
-                extension = os.path.splitext(image_path)[1].lower().lstrip('.')
+                extension = os.path.splitext(image_path)[1].lower().lstrip(".")
 
                 # Add metadata for this image
-                dataset.add_metadata(image_path, {
-                    "width": width,
-                    "height": height,
-                    "aspect_ratio": round(aspect_ratio, 2),
-                    "disk_size_kb": disk_size_kb,
-                    "color_mode": img.mode,
-                    "extension": extension,
-                })
+                dataset.add_metadata(
+                    image_path,
+                    {
+                        "width": width,
+                        "height": height,
+                        "aspect_ratio": round(aspect_ratio, 2),
+                        "disk_size_kb": disk_size_kb,
+                        "color_mode": img.mode,
+                        "extension": extension,
+                    },
+                )
             except Exception as e:
                 # Handle errors gracefully, store error info
                 dataset.update_metadata_entry(
-                    image_path,
-                    error=str(e),
-                    error_type=type(e).__name__
+                    image_path, error=str(e), error_type=type(e).__name__
                 )
 
         return dataset
@@ -246,7 +247,7 @@ class ImageExifHandler(HandlerPlugin):
     def __init__(self) -> None:
         super().__init__(
             name="image_exif",
-            description="Extracts EXIF metadata from images (camera, settings, GPS, date, etc.)"
+            description="Extracts EXIF metadata from images (camera, settings, GPS, date, etc.)",
         )
 
     def handle(self, image_paths: List[str]) -> SimpleDataset:
@@ -262,7 +263,7 @@ class ImageExifHandler(HandlerPlugin):
             try:
                 img = Image.open(image_path)
                 exif_data = self._extract_exif(img)
-                
+
                 if exif_data:
                     dataset.add_metadata(image_path, exif_data)
                 else:
@@ -271,9 +272,7 @@ class ImageExifHandler(HandlerPlugin):
             except Exception as e:
                 # Handle errors gracefully, store error info
                 dataset.update_metadata_entry(
-                    image_path,
-                    error=str(e),
-                    error_type=type(e).__name__
+                    image_path, error=str(e), error_type=type(e).__name__
                 )
 
         return dataset
@@ -307,7 +306,16 @@ class ImageExifHandler(HandlerPlugin):
                         value = str(value)
 
                 # Normalize common EXIF names
-                if tag_name in ("Make", "Model", "DateTime", "FNumber", "ExposureTime", "ISOSpeedRatings", "FocalLength", "Flash"):
+                if tag_name in (
+                    "Make",
+                    "Model",
+                    "DateTime",
+                    "FNumber",
+                    "ExposureTime",
+                    "ISOSpeedRatings",
+                    "FocalLength",
+                    "Flash",
+                ):
                     pretty_name = {
                         "Make": "camera_make",
                         "Model": "camera_model",
@@ -320,14 +328,36 @@ class ImageExifHandler(HandlerPlugin):
                     }[tag_name]
 
                     if tag_name == "Flash":
-                        flash_status = {0: "No flash", 1: "Flash fired"}.get(value, str(value))
+                        flash_status = {0: "No flash", 1: "Flash fired"}.get(
+                            value, str(value)
+                        )
                         exif_data[pretty_name] = flash_status
-                    elif tag_name == "ExposureTime" and hasattr(value, "numerator") and hasattr(value, "denominator"):
-                        exif_data[pretty_name] = f"1/{int(value.denominator / value.numerator)}" if value.numerator < value.denominator else str(value)
-                    elif tag_name == "FNumber" and hasattr(value, "numerator") and hasattr(value, "denominator"):
-                        exif_data[pretty_name] = f"f/{value.numerator / value.denominator:.1f}"
-                    elif tag_name == "FocalLength" and hasattr(value, "numerator") and hasattr(value, "denominator"):
-                        exif_data[pretty_name] = f"{value.numerator / value.denominator:.1f}mm"
+                    elif (
+                        tag_name == "ExposureTime"
+                        and hasattr(value, "numerator")
+                        and hasattr(value, "denominator")
+                    ):
+                        exif_data[pretty_name] = (
+                            f"1/{int(value.denominator / value.numerator)}"
+                            if value.numerator < value.denominator
+                            else str(value)
+                        )
+                    elif (
+                        tag_name == "FNumber"
+                        and hasattr(value, "numerator")
+                        and hasattr(value, "denominator")
+                    ):
+                        exif_data[pretty_name] = (
+                            f"f/{value.numerator / value.denominator:.1f}"
+                        )
+                    elif (
+                        tag_name == "FocalLength"
+                        and hasattr(value, "numerator")
+                        and hasattr(value, "denominator")
+                    ):
+                        exif_data[pretty_name] = (
+                            f"{value.numerator / value.denominator:.1f}mm"
+                        )
                     else:
                         exif_data[pretty_name] = str(value)
                 else:
@@ -354,7 +384,8 @@ class ImageExifHandler(HandlerPlugin):
                 return None
 
         for key, value in gps_info.items():
-            name = GPSTAGS.get(key, key)
+            raw_name = GPSTAGS.get(key, key)
+            name = str(raw_name)
             if name == "GPSLatitude":
                 gps_data["gps_latitude"] = decode_coord(value)
             elif name == "GPSLongitude":
@@ -384,3 +415,53 @@ class ImageExifHandler(HandlerPlugin):
         except (TypeError, ValueError, ZeroDivisionError):
             pass
         return None
+
+
+class ImageAIDetectionHandler(HandlerPlugin):
+    """
+    Stub for AI detection on images.
+
+    This handler should inspect each image and attach AI-oriented metadata,
+    such as a likely source classification, deepfake score, or synthetic
+    content confidence.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="image_ai_detection",
+            description="Detects likely synthetic or AI-generated image characteristics.",
+        )
+
+    def handle(self, image_paths: List[str]) -> SimpleDataset:
+        """
+        Process images and return a dataset with AI detection metadata.
+
+        :param image_paths: List of image file paths to analyze.
+        :return: Dataset containing AI detection metadata per image.
+        """
+        raise NotImplementedError("AI detection handler has not been implemented yet.")
+
+
+class ImageDeduplicationHandler(HandlerPlugin):
+    """
+    Stub for image deduplication.
+
+    This handler should identify exact or near-duplicate images and
+    annotate the dataset with duplicate groups, canonical image paths, and
+    any images that can be collapsed or filtered.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="image_deduplication",
+            description="Detects duplicate or near-duplicate images in the dataset.",
+        )
+
+    def handle(self, image_paths: List[str]) -> SimpleDataset:
+        """
+        Process images and return a dataset with deduplication metadata.
+
+        :param image_paths: List of image file paths to analyze.
+        :return: Dataset containing deduplication metadata per image.
+        """
+        raise NotImplementedError("Deduplication handler has not been implemented yet.")
