@@ -169,7 +169,7 @@ class HandlerPlugin(ABC):
         return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r})"
 
 
-class ImageAnalyzerHandler(HandlerPlugin):
+class BasicAnalyzerPlugin(HandlerPlugin):
     """
     Analyzes images and extracts visual metadata.
 
@@ -228,7 +228,9 @@ class ImageAnalyzerHandler(HandlerPlugin):
         return dataset
 
 
-class ImageExifHandler(HandlerPlugin):
+# NOTE: This doesn't work very well (at all?) currently - sort of weird to test because so many of the test
+#   images just don't have EXIF data
+class ExifExtractorPlugin(HandlerPlugin):
     """
     Extracts EXIF metadata from images.
 
@@ -417,7 +419,7 @@ class ImageExifHandler(HandlerPlugin):
         return None
 
 
-class ImageAIDetectionHandler(HandlerPlugin):
+class AIDetectionPlugin(HandlerPlugin):
     """
     Stub for AI detection on images.
 
@@ -442,7 +444,7 @@ class ImageAIDetectionHandler(HandlerPlugin):
         raise NotImplementedError("AI detection handler has not been implemented yet.")
 
 
-class ImageDeduplicationHandler(HandlerPlugin):
+class DeduplicationPlugin(HandlerPlugin):
     """
     Stub for image deduplication.
 

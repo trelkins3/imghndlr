@@ -45,20 +45,24 @@ class ImgGalleryUI:
                                  Not set for temporary 4chan downloads (which we don't protect).
         :param dataset: Optional Dataset containing image metadata.
         """
+        # Window/app management
         self.root: tk.Tk = root
         self.root.title(string="imghndlr Gallery")
         self.root.geometry(newGeometry="800x700")
         self.root.minsize(width=450, height=450)
 
+        # Input data (image paths, metadata, etc.)
         self.image_paths: List[str] = image_paths
         self.source_directory: Optional[str] = source_directory
         self.config_file: Optional[str] = config_file
         self.dataset: Optional[Dataset] = dataset
+
+        # Current state variables
         self.current_index: int = 0
         self.current_raw_img: Optional[Image.Image] = None
         self.tk_img: Optional[ImageTk.PhotoImage] = None
 
-        # UI Component Declarations
+        # Buttons, bars, and labels
         self.status_bar: tk.Label
         self.dir_entry: tk.Entry
         self.save_btn: tk.Button
