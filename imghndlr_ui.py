@@ -277,6 +277,7 @@ class ImgGalleryUI:
         self.render_scaled_image()
         self.update_save_status()
         self._update_window_title_and_metadata()
+        self._update_metadata_display()
 
     def render_scaled_image(self) -> None:
         """
@@ -312,10 +313,7 @@ class ImgGalleryUI:
 
     def _update_window_title_and_metadata(self) -> None:
         """
-        Updates the window title with current image info and displays metadata panel.
-
-        Window title shows: imghndlr Gallery - filename (WxH) | size KB
-        Metadata panel shows all available metadata from the dataset if available.
+        Updates the window title with the current image filename and refreshes the metadata panel.
         """
         if not self.image_paths or self.current_index >= len(self.image_paths):
             return
@@ -323,25 +321,7 @@ class ImgGalleryUI:
         img_path = self.image_paths[self.current_index]
         filename = os.path.basename(img_path)
 
-        # Build window title with image dimensions and file size
-        title_parts = ["imghndlr Gallery"]
-        if self.current_raw_img:
-            w, h = self.current_raw_img.size
-            title_parts.append(f"{filename} ({w}x{h})")
-        else:
-            title_parts.append(filename)
-
-        # Add file size if available from metadata or filesystem
-        try:
-            file_size_kb = os.path.getsize(img_path) / 1024
-            title_parts.append(f"{file_size_kb:.1f}KB")
-        except Exception:
-            pass
-
-        self.root.title(" | ".join(title_parts))
-
-        # Update metadata frame
-        self._update_metadata_display()
+        self.root.title(f"imghndlr Gallery - {filename}")
 
     def _update_metadata_display(self) -> None:
         """
