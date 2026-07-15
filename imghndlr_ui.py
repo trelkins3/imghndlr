@@ -574,30 +574,35 @@ class ImgGalleryUI:
 
     def reveal_current_image(self) -> None:
         """
-        Opens the current image in the system file browser if it exists in the target directory.
+        Opens the current image in the system file browser.
 
-        If the image is not yet saved in the target directory, this method does nothing.
+        Prioritizes the saved version in the target directory, but falls back to
+        the source image if not yet saved.
         """
         if not self.image_paths:
             return
 
-        target_dir: str = self.dir_entry.get().strip()
-        if not target_dir:
-            return
-
         src_path: str = self.image_paths[self.current_index]
-        filename: str = os.path.basename(src_path)
-        dest_path: str = os.path.join(target_dir, filename)
 
-        if not os.path.exists(dest_path):
+        # Try to open the saved version first, fall back to source
+        target_dir: str = self.dir_entry.get().strip()
+        if target_dir:
+            filename: str = os.path.basename(src_path)
+            dest_path: str = os.path.join(target_dir, filename)
+            reveal_path = dest_path if os.path.exists(dest_path) else src_path
+        else:
+            reveal_path = src_path
+
+        # Verify the path exists before trying to open it
+        if not os.path.exists(reveal_path):
             return
 
         try:
             if sys.platform.startswith("win"):
-                os.startfile(dest_path)
+                os.startfile(reveal_path)
             elif sys.platform == "darwin":
-                subprocess.run(["open", "-R", dest_path], check=False)
+                subprocess.run(["open", "-R", reveal_path], check=False)
             else:
-                subprocess.run(["xdg-open", os.path.dirname(dest_path)], check=False)
+                subprocess.run(["xdg-open", os.path.dirname(reveal_path)], check=False)
         except Exception:
             pass
