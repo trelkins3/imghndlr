@@ -6,7 +6,7 @@ from contextlib import ExitStack
 from typing import List, Optional
 
 from imghndlr_plugin import BasicAnalyzerPlugin
-from imghndlr_source import ImageSource, SourceType
+from imghndlr_img_source import ImageSource, SourceType
 from imghndlr_ui import ImgGalleryUI
 
 
@@ -40,11 +40,7 @@ class ImgHndlrOrchestrator:
         :param source_input: The source-specific input string (ex. 4chan URL, subreddit name, etc.)
         :param use_config: Whether to enable persistent config file
         """
-        from imghndlr_source import (
-            DirectoryImageSource,
-            FourChanImageSource,
-            RedditImageSource,
-        )
+        from imghndlr_img_source import DirectoryImageSource, FourChanImageSource
 
         # User wants the persistent .conf file, spin it up
         if use_config:
@@ -54,13 +50,15 @@ class ImgHndlrOrchestrator:
 
         tmpdir = None
         with ExitStack() as stack:
-            # Sources that download images need to clean those downloads up when we're done
-            if source_type in (SourceType.FOURCHAN, SourceType.REDDIT):
+            if source_type == SourceType.FOURCHAN:
                 tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
                 print(f"Created temporary directory at: {tmpdir}")
                 stack.callback(
                     lambda: print("Temporary directory is now being cleaned up...")
                 )
+
+            if source_type not in SourceType.supported_types():
+                raise ValueError("The requested source type is not currently supported.")
 
             source: ImageSource
             match source_type:
@@ -72,14 +70,6 @@ class ImgHndlrOrchestrator:
                     # REVISIT: Don't like how this is getting broken up, figure out why it's happening + fix it
                     source = FourChanImageSource(
                         thread_url=source_input,
-                        target_dir=tmpdir,
-                    )
-                case SourceType.REDDIT:
-                    # thanks mypy
-                    assert tmpdir is not None
-                    # REVISIT: Don't like how this is getting broken up, figure out why it's happening + fix it
-                    source = RedditImageSource(
-                        subreddit_name=source_input,
                         target_dir=tmpdir,
                     )
                 case _:
@@ -132,10 +122,10 @@ class ImgHndlrOrchestrator:
         parser = argparse.ArgumentParser(
             description="Fetch and browse images from various sources.",
             formatter_class=argparse.RawDescriptionHelpFormatter,
+            # REVISIT: If we add Reddit support back, this needs an example string
             epilog="""Examples:
   python imghndlr.py --source 4chan "https://boards.4channel.org/wg/thread/<id>"
   python imghndlr.py --source dir "/path/to/images"
-  python imghndlr.py --source reddit <subreddit name>
             """,
         )
         parser.add_argument(
@@ -145,13 +135,15 @@ class ImgHndlrOrchestrator:
         )
         parser.add_argument(
             "--source",
-            choices=[s.value for s in SourceType],
+            choices=[s.value for s in SourceType.supported_types()],
             required=True,
-            help="Image source type: '4chan' (4chan thread), 'dir' (local directory), or 'reddit' (subreddit).",
+            # REVISIT: If we add Reddit support back, this needs to mention it
+            help="Image source type: '4chan' (4chan thread) or 'dir' (local directory).",
         )
         parser.add_argument(
             "source_input",
-            help="Source-specific input: Full 4chan thread URL | Local directory path | Subreddit name (without '/r/').",
+            # REVISIT: If we add Reddit support back, this needs to mention it
+            help="Source-specific input: Full 4chan thread URL or local directory path.",
         )
         parsed_args = parser.parse_args()
         source_type = SourceType(parsed_args.source)

@@ -15,6 +15,14 @@ class SourceType(Enum):
     DIRECTORY = "dir"
     REDDIT = "reddit"
 
+    @classmethod
+    def supported_types(cls) -> List["SourceType"]:
+        """
+        Return the currently supported source types, excluding disabled options.
+        """
+        excluded_types = {cls.REDDIT}  # Exclude Reddit for now since the public JSON API is no longer supported >:(
+        return [source_type for source_type in cls if source_type not in excluded_types]
+
 
 class ImageSource(ABC):
     """
