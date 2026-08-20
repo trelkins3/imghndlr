@@ -32,6 +32,9 @@ class ImgHndlrOrchestrator:
         source_type: SourceType,
         source_input: str,
         use_config: bool = False,
+        duplicates_only: bool = False,
+        dedupe: bool = False,
+        allow_webm: bool = False,
     ) -> None:
         """
         Perform setup, fetch image paths, invoke plugins, then spin up the UI.
@@ -39,6 +42,9 @@ class ImgHndlrOrchestrator:
         :param source_type: The resolved source type enum.
         :param source_input: The source-specific input string (ex. 4chan URL, subreddit name, etc.)
         :param use_config: Whether to enable persistent config file
+        :param duplicates_only: Whether to display only images with similar matches.
+        :param dedupe: Whether to calculate perceptual hashes and similarity counts.
+        :param allow_webm: Whether to include WebM files in source results.
         """
         from imghndlr_img_source import DirectoryImageSource, FourChanImageSource
 
@@ -63,7 +69,10 @@ class ImgHndlrOrchestrator:
             source: ImageSource
             match source_type:
                 case SourceType.DIRECTORY:
-                    source = DirectoryImageSource(directory_path=source_input)
+                    source = DirectoryImageSource(
+                        directory_path=source_input,
+                        allow_webm=allow_webm,
+                    )
                 case SourceType.FOURCHAN:
                     # thanks mypy
                     assert tmpdir is not None
@@ -71,6 +80,7 @@ class ImgHndlrOrchestrator:
                     source = FourChanImageSource(
                         thread_url=source_input,
                         target_dir=tmpdir,
+                        allow_webm=allow_webm,
                     )
                 case _:
                     raise AssertionError(
@@ -97,8 +107,19 @@ class ImgHndlrOrchestrator:
             # Run basic analysis only for now. EXIF extraction plugin is disabled pending debug.
             print("Analyzing images...")
             analyzer = BasicAnalyzerPlugin()
-            dataset = analyzer.handle(image_paths)
+            dataset = analyzer.handle(image_paths, dedupe=dedupe)
             print("Image analysis complete.")
+
+            if duplicates_only:
+                image_paths = [
+                    image_path
+                    for image_path in image_paths
+                    if dataset.get_metadata_for_image(image_path).get(
+                        "similar_image_count", 0
+                    )
+                    > 0
+                ]
+                print(f"Showing {len(image_paths)} images with similar matches.")
 
             root: tk.Tk = tk.Tk()
             _ = ImgGalleryUI(
@@ -134,6 +155,21 @@ class ImgHndlrOrchestrator:
             help="Enable saving/loading target directory path",
         )
         parser.add_argument(
+            "--dedupe",
+            action="store_true",
+            help="Calculate perceptual hashes and find similar images",
+        )
+        parser.add_argument(
+            "--allow_webm",
+            action="store_true",
+            help="Include WebM files even if the UI cannot display them",
+        )
+        parser.add_argument(
+            "--duplicates_only",
+            action="store_true",
+            help="Show only similar images; requires --dedupe",
+        )
+        parser.add_argument(
             "--source",
             choices=[s.value for s in SourceType.supported_types()],
             required=True,
@@ -146,12 +182,17 @@ class ImgHndlrOrchestrator:
             help="Source-specific input: Full 4chan thread URL or local directory path.",
         )
         parsed_args = parser.parse_args()
+        if parsed_args.duplicates_only and not parsed_args.dedupe:
+            parser.error("--duplicates_only requires --dedupe")
         source_type = SourceType(parsed_args.source)
 
         cls().run(
             source_type=source_type,
             source_input=parsed_args.source_input,
             use_config=parsed_args.conf,
+            duplicates_only=parsed_args.duplicates_only,
+            dedupe=parsed_args.dedupe,
+            allow_webm=parsed_args.allow_webm,
         )
 
 

@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import tkinter as tk
 from typing import Dict, List, Optional
 
@@ -107,8 +108,16 @@ class ImgGalleryUI:
 
         try:
             config = {"save_directory": path}
-            with open(self.config_file, "w") as f:
+            config_directory = os.path.dirname(os.path.abspath(self.config_file))
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=config_directory,
+                delete=False,
+            ) as f:
                 json.dump(config, f, indent=4)
+                temporary_config_file = f.name
+            os.replace(temporary_config_file, self.config_file)
         except Exception as e:
             print(f"Warning: Failed to save directory configuration: {e}")
 
@@ -363,12 +372,14 @@ class ImgGalleryUI:
         for key, value in metadata.items():
             if key.startswith("error"):
                 continue
-            if key in {"width", "height", "disk_size_kb"}:
+            if key in {"width", "height", "disk_size_kb", "phash"}:
                 continue
             if key == "dimensions" or key == "disk_size":
                 continue
 
             display_key = key.replace("_", " ").title()
+            if key == "similar_image_count":
+                display_key = "Similar Images"
             display_value = str(value)
             display_entries.append((display_key, display_value))
 

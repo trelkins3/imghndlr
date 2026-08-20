@@ -1,7 +1,9 @@
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+import imagehash
 from PIL import Image
 from PIL.ExifTags import GPSTAGS, TAGS
 
@@ -182,27 +184,43 @@ class BasicAnalyzerPlugin(HandlerPlugin):
     If an image fails to analyze, stores the error message in metadata.
     """
 
+    SIMILARITY_THRESHOLD = 8
+
     def __init__(self) -> None:
         super().__init__(
             name="image_analyzer",
             description="Extracts visual metadata from images (dimensions, size, color mode, etc.)",
         )
 
-    def handle(self, image_paths: List[str]) -> SimpleDataset:
+    def handle(self, image_paths: List[str], dedupe: bool = False) -> SimpleDataset:
         """
         Process images and extract visual metadata.
 
         :param image_paths: List of image file paths to analyze.
+        :param dedupe: Whether to calculate perceptual hashes and similarity counts.
         :return: Dataset with images and their extracted metadata.
         """
         dataset = SimpleDataset(image_paths)
+        perceptual_hashes: Dict[str, Any] = {}
+        if dedupe:
+            import imagehash
 
+        total_images = len(image_paths)
+        completed_count = 0
+        analysis_start = time.perf_counter()
+
+        analyzed_count = 0
         for image_path in image_paths:
             try:
                 # Open and analyze image
-                img = Image.open(image_path)
-                width, height = img.size
-                aspect_ratio = width / height if height > 0 else 0
+                with Image.open(image_path) as img:
+                    width, height = img.size
+                    aspect_ratio = width / height if height > 0 else 0
+                    color_mode = img.mode
+                    if dedupe:
+                        perceptual_hash = imagehash.phash(img)
+                        perceptual_hashes[image_path] = perceptual_hash
+
                 disk_size_bytes = os.path.getsize(image_path)
                 disk_size_kb = round(disk_size_bytes / 1024, 2)
                 extension = os.path.splitext(image_path)[1].lower().lstrip(".")
@@ -215,15 +233,60 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                         "height": height,
                         "aspect_ratio": round(aspect_ratio, 2),
                         "disk_size_kb": disk_size_kb,
-                        "color_mode": img.mode,
+                        "color_mode": color_mode,
                         "extension": extension,
                     },
+                )
+                if dedupe:
+                    dataset.update_metadata_entry(
+                        image_path,
+                        phash=str(perceptual_hash),
+                    )
+                analyzed_count += 1
+                completed_count += 1
+                elapsed_seconds = time.perf_counter() - analysis_start
+                print(
+                    f"[{completed_count}/{total_images}] Analyzed: "
+                    f"{os.path.basename(image_path)} | "
+                    f"Elapsed: {elapsed_seconds:.1f}s"
                 )
             except Exception as e:
                 # Handle errors gracefully, store error info
                 dataset.update_metadata_entry(
                     image_path, error=str(e), error_type=type(e).__name__
                 )
+                completed_count += 1
+                elapsed_seconds = time.perf_counter() - analysis_start
+                print(
+                    f"[{completed_count}/{total_images}] Failed to analyze: "
+                    f"{os.path.basename(image_path)} | "
+                    f"Elapsed: {elapsed_seconds:.1f}s"
+                )
+
+        elapsed_seconds = time.perf_counter() - analysis_start
+        print(
+            f"Analysis complete: {analyzed_count}/{total_images} "
+            f"images analyzed in {elapsed_seconds:.1f}s."
+        )
+
+        if not dedupe:
+            return dataset
+
+        similarity_counts: Dict[str, int] = {
+            image_path: 0 for image_path in perceptual_hashes
+        }
+        hashed_images = list(perceptual_hashes.items())
+        for index, (image_path, perceptual_hash) in enumerate(hashed_images):
+            for other_path, other_hash in hashed_images[index + 1 :]:
+                if perceptual_hash - other_hash <= self.SIMILARITY_THRESHOLD:
+                    similarity_counts[image_path] += 1
+                    similarity_counts[other_path] += 1
+
+        for image_path, similar_image_count in similarity_counts.items():
+            dataset.update_metadata_entry(
+                image_path,
+                similar_image_count=similar_image_count,
+            )
 
         return dataset
 

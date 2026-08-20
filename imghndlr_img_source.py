@@ -49,7 +49,9 @@ class FourChanImageSource(ImageSource):
     * Uses threads to concurrently download media assets into a target directory
     """
 
-    def __init__(self, thread_url: str, target_dir: str) -> None:
+    def __init__(
+        self, thread_url: str, target_dir: str, allow_webm: bool = False
+    ) -> None:
         """
         Initializes the image source with a thread URL and a local target directory.
 
@@ -58,6 +60,7 @@ class FourChanImageSource(ImageSource):
         """
         self.thread_url: str = thread_url
         self.target_dir: str = target_dir
+        self.allow_webm: bool = allow_webm
         self.board: str
         self.thread_id: str
         self.board, self.thread_id = self._parse_thread_url(url=thread_url)
@@ -111,7 +114,11 @@ class FourChanImageSource(ImageSource):
 
         posts: List[Dict[str, Any]] = response.json().get("posts", [])
         image_posts: List[Dict[str, Any]] = [
-            p for p in posts if "tim" in p and "ext" in p
+            p
+            for p in posts
+            if "tim" in p
+            and "ext" in p
+            and (self.allow_webm or p["ext"].lower() != ".webm")
         ]
         total_images: int = len(image_posts)
 
@@ -356,8 +363,9 @@ class DirectoryImageSource(ImageSource):
         ".tif",
     }
 
-    def __init__(self, directory_path: str) -> None:
+    def __init__(self, directory_path: str, allow_webm: bool = False) -> None:
         self.directory_path: str = os.path.abspath(directory_path)
+        self.allow_webm: bool = allow_webm
 
     def get_images(self) -> List[str]:
         if not os.path.isdir(self.directory_path):
@@ -367,7 +375,10 @@ class DirectoryImageSource(ImageSource):
         for entry in os.listdir(self.directory_path):
             path = os.path.join(self.directory_path, entry)
             extension = os.path.splitext(entry)[1].lower()
-            if os.path.isfile(path) and extension in self.SUPPORTED_EXTENSIONS:
+            supported_extensions = self.SUPPORTED_EXTENSIONS
+            if self.allow_webm:
+                supported_extensions = supported_extensions | {".webm"}
+            if os.path.isfile(path) and extension in supported_extensions:
                 image_paths.append(path)
 
         image_paths.sort()
