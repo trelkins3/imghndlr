@@ -1,5 +1,7 @@
 black>=24.3.0,<25
 ImageHash>=4.3.2,<5
+pywin32>=306,<307; sys_platform == "win32"
+types-pywin32>=306,<307; sys_platform == "win32"
 isort>=5.12.0,<6
 ruff>=0.0.0,<1
 mypy>=1.11.0,<2

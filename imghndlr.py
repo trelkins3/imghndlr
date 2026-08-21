@@ -5,8 +5,8 @@ import tkinter as tk
 from contextlib import ExitStack
 from typing import List, Optional
 
-from imghndlr_plugin import BasicAnalyzerPlugin
 from imghndlr_img_source import ImageSource, SourceType
+from imghndlr_plugin import BasicAnalyzerPlugin
 from imghndlr_ui import ImgGalleryUI
 
 
@@ -64,7 +64,9 @@ class ImgHndlrOrchestrator:
                 )
 
             if source_type not in SourceType.supported_types():
-                raise ValueError("The requested source type is not currently supported.")
+                raise ValueError(
+                    "The requested source type is not currently supported."
+                )
 
             source: ImageSource
             match source_type:

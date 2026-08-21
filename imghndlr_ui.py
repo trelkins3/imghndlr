@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import tkinter as tk
+from io import BytesIO
 from typing import Dict, List, Optional
 
 from PIL import Image, ImageTk
@@ -67,6 +68,7 @@ class ImgGalleryUI:
         self.status_bar: tk.Label
         self.dir_entry: tk.Entry
         self.save_btn: tk.Button
+        self.copy_btn: tk.Button
         self.delete_btn: tk.Button
         self.reveal_btn: tk.Button
         self.prev_btn: tk.Button
@@ -184,6 +186,15 @@ class ImgGalleryUI:
         )
         self.reveal_btn.pack(side="left", padx=5)
 
+        self.copy_btn = tk.Button(
+            master=save_frame,
+            text="Copy Image (Ctrl+C)",
+            command=self.copy_current_image,
+            bg="#673AB7",
+            fg="white",
+        )
+        self.copy_btn.pack(side="left", padx=5)
+
         # 3. Navigation Controls Frame (Above Save Frame)
         nav_frame = tk.Frame(master=self.root)
         nav_frame.pack(side="bottom", fill="x", pady=5)
@@ -217,6 +228,7 @@ class ImgGalleryUI:
         self.root.bind(sequence="<Left>", func=self._handle_left_key)
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
+        self.root.bind(sequence="<Control-c>", func=self._handle_copy_key)
         self.root.bind(sequence="<Delete>", func=self._handle_delete_key)
         self.root.bind(sequence="r", func=self._handle_reveal_key)
         self.root.bind(sequence="R", func=self._handle_reveal_key)
@@ -446,6 +458,16 @@ class ImgGalleryUI:
         if self.root.focus_get() != self.dir_entry:
             self.save_current_image()
 
+    def _handle_copy_key(self, event: tk.Event) -> None:
+        """
+        Event binding bridge routing Ctrl+C to image clipboard copying.
+
+        Ignores execution calls if the user is explicitly focused on editing text inside the
+        target path input box.
+        """
+        if self.root.focus_get() != self.dir_entry:
+            self.copy_current_image()
+
     def _handle_delete_key(self, event: tk.Event) -> None:
         """
         Event binding bridge routing Delete key presses to delete operations.
@@ -538,6 +560,49 @@ class ImgGalleryUI:
             self.update_save_status()
         except Exception:
             self.status_bar.config(text="⚠ Error: Failed to copy file.", fg="#d84315")
+
+    def copy_current_image(self) -> None:
+        """Copies the full-resolution image to the Windows clipboard as a bitmap."""
+        if not self.current_raw_img:
+            self.status_bar.config(
+                text="⚠ Error: No image is currently loaded.", fg="#d84315"
+            )
+            return
+
+        if sys.platform != "win32":
+            self.status_bar.config(
+                text="⚠ Error: Image clipboard copying requires Windows.",
+                fg="#d84315",
+            )
+            return
+
+        try:
+            import win32clipboard  # type: ignore[import-untyped]
+            import win32con  # type: ignore[import-untyped]
+
+            image = self.current_raw_img.convert("RGB")
+            with BytesIO() as buffer:
+                image.save(buffer, format="BMP")
+                dib_data = buffer.getvalue()[14:]
+
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32con.CF_DIB, dib_data)
+            finally:
+                win32clipboard.CloseClipboard()
+
+            self.status_bar.config(text="Image copied to clipboard", fg="#2e7d32")
+        except ImportError:
+            self.status_bar.config(
+                text="⚠ Error: Install the pywin32 dependency first.",
+                fg="#d84315",
+            )
+        except Exception:
+            self.status_bar.config(
+                text="⚠ Error: Failed to copy image to clipboard.",
+                fg="#c62828",
+            )
 
     def delete_current_image(self) -> None:
         """

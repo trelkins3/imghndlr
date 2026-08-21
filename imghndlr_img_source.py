@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from imghndlr_utils import ElapsedTimer
+
 
 class SourceType(Enum):
     """Enumeration of available image source types."""
@@ -20,7 +22,9 @@ class SourceType(Enum):
         """
         Return the currently supported source types, excluding disabled options.
         """
-        excluded_types = {cls.REDDIT}  # Exclude Reddit for now since the public JSON API is no longer supported >:(
+        excluded_types = {
+            cls.REDDIT
+        }  # Exclude Reddit for now since the public JSON API is no longer supported >:(
         return [source_type for source_type in cls if source_type not in excluded_types]
 
 
@@ -128,6 +132,7 @@ class FourChanImageSource(ImageSource):
         print(f"Found {total_images} images. Starting concurrent downloads...\n")
         image_paths: List[str] = []
         completed_count: int = 0
+        download_timer = ElapsedTimer()
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_post = {
@@ -142,15 +147,20 @@ class FourChanImageSource(ImageSource):
                     local_path, img_filename = future.result()
                     image_paths.append(local_path)
                     print(
-                        f"[{completed_count}/{total_images}] Downloaded: {img_filename}"
+                        f"[{completed_count}/{total_images}] Downloaded: {img_filename} | "
+                        f"Elapsed: {download_timer.format_elapsed()}"
                     )
                 except Exception as e:
                     img_filename = f"{post.get('tim', 'unknown')}{post.get('ext', '')}"
                     print(
-                        f"[{completed_count}/{total_images}] Failed to download {img_filename}: {e}"
+                        f"[{completed_count}/{total_images}] Failed to download "
+                        f"{img_filename}: {e} | Elapsed: {download_timer.format_elapsed()}"
                     )
 
-        print(f"\nSuccessfully downloaded {len(image_paths)}/{total_images} images.")
+        print(
+            f"\nSuccessfully downloaded {len(image_paths)}/{total_images} images "
+            f"in {download_timer.format_elapsed()}."
+        )
         image_paths.sort()
         return image_paths
 
@@ -308,6 +318,7 @@ class RedditImageSource(ImageSource):
 
             image_paths: List[str] = []
             completed_count: int = 0
+            download_timer = ElapsedTimer()
 
             with ThreadPoolExecutor(max_workers=10) as executor:
                 future_to_url = {
@@ -325,15 +336,18 @@ class RedditImageSource(ImageSource):
                         local_path, _ = future.result()
                         image_paths.append(local_path)
                         print(
-                            f"[{completed_count}/{total_images}] Downloaded: {filename}"
+                            f"[{completed_count}/{total_images}] Downloaded: {filename} | "
+                            f"Elapsed: {download_timer.format_elapsed()}"
                         )
                     except Exception as e:
                         print(
-                            f"[{completed_count}/{total_images}] Failed to download {filename}: {e}"
+                            f"[{completed_count}/{total_images}] Failed to download "
+                            f"{filename}: {e} | Elapsed: {download_timer.format_elapsed()}"
                         )
 
             print(
-                f"\nSuccessfully downloaded {len(image_paths)}/{total_images} images."
+                f"\nSuccessfully downloaded {len(image_paths)}/{total_images} images "
+                f"in {download_timer.format_elapsed()}."
             )
             image_paths.sort()
             return image_paths
@@ -371,15 +385,30 @@ class DirectoryImageSource(ImageSource):
         if not os.path.isdir(self.directory_path):
             raise ValueError("Source directory does not exist or is not a directory.")
 
+        entries = os.listdir(self.directory_path)
+        supported_extensions = self.SUPPORTED_EXTENSIONS
+        if self.allow_webm:
+            supported_extensions = supported_extensions | {".webm"}
+
+        candidate_entries = [
+            entry
+            for entry in entries
+            if os.path.isfile(os.path.join(self.directory_path, entry))
+            and os.path.splitext(entry)[1].lower() in supported_extensions
+        ]
         image_paths: List[str] = []
-        for entry in os.listdir(self.directory_path):
+        load_timer = ElapsedTimer()
+        total_images = len(candidate_entries)
+
+        for completed_count, entry in enumerate(candidate_entries, start=1):
             path = os.path.join(self.directory_path, entry)
-            extension = os.path.splitext(entry)[1].lower()
-            supported_extensions = self.SUPPORTED_EXTENSIONS
-            if self.allow_webm:
-                supported_extensions = supported_extensions | {".webm"}
-            if os.path.isfile(path) and extension in supported_extensions:
-                image_paths.append(path)
+            image_paths.append(path)
+            print(
+                f"[{completed_count}/{total_images}] Loaded: {entry} | "
+                f"Elapsed: {load_timer.format_elapsed()}"
+            )
 
         image_paths.sort()
+        if total_images:
+            print(f"Loaded {total_images} images in {load_timer.format_elapsed()}.")
         return image_paths

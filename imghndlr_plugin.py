@@ -1,11 +1,11 @@
 import os
-import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-import imagehash
 from PIL import Image
 from PIL.ExifTags import GPSTAGS, TAGS
+
+from imghndlr_utils import ElapsedTimer
 
 
 class Dataset(ABC):
@@ -207,7 +207,7 @@ class BasicAnalyzerPlugin(HandlerPlugin):
 
         total_images = len(image_paths)
         completed_count = 0
-        analysis_start = time.perf_counter()
+        analysis_timer = ElapsedTimer()
 
         analyzed_count = 0
         for image_path in image_paths:
@@ -244,11 +244,10 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                     )
                 analyzed_count += 1
                 completed_count += 1
-                elapsed_seconds = time.perf_counter() - analysis_start
                 print(
                     f"[{completed_count}/{total_images}] Analyzed: "
                     f"{os.path.basename(image_path)} | "
-                    f"Elapsed: {elapsed_seconds:.1f}s"
+                    f"Elapsed: {analysis_timer.format_elapsed()}"
                 )
             except Exception as e:
                 # Handle errors gracefully, store error info
@@ -256,17 +255,15 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                     image_path, error=str(e), error_type=type(e).__name__
                 )
                 completed_count += 1
-                elapsed_seconds = time.perf_counter() - analysis_start
                 print(
                     f"[{completed_count}/{total_images}] Failed to analyze: "
                     f"{os.path.basename(image_path)} | "
-                    f"Elapsed: {elapsed_seconds:.1f}s"
+                    f"Elapsed: {analysis_timer.format_elapsed()}"
                 )
 
-        elapsed_seconds = time.perf_counter() - analysis_start
         print(
             f"Analysis complete: {analyzed_count}/{total_images} "
-            f"images analyzed in {elapsed_seconds:.1f}s."
+            f"images analyzed in {analysis_timer.format_elapsed()}."
         )
 
         if not dedupe:
