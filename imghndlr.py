@@ -35,6 +35,7 @@ class ImgHndlrOrchestrator:
         duplicates_only: bool = False,
         dedupe: bool = False,
         allow_webm: bool = False,
+        allow_mp4: bool = False,
     ) -> None:
         """
         Perform setup, fetch image paths, invoke plugins, then spin up the UI.
@@ -45,6 +46,7 @@ class ImgHndlrOrchestrator:
         :param duplicates_only: Whether to display only images with similar matches.
         :param dedupe: Whether to calculate perceptual hashes and similarity counts.
         :param allow_webm: Whether to include WebM files in source results.
+        :param allow_mp4: Whether to include MP4 files in source results.
         """
         from imghndlr_img_source import DirectoryImageSource, FourChanImageSource
 
@@ -74,6 +76,7 @@ class ImgHndlrOrchestrator:
                     source = DirectoryImageSource(
                         directory_path=source_input,
                         allow_webm=allow_webm,
+                        allow_mp4=allow_mp4,
                     )
                 case SourceType.FOURCHAN:
                     # thanks mypy
@@ -83,6 +86,7 @@ class ImgHndlrOrchestrator:
                         thread_url=source_input,
                         target_dir=tmpdir,
                         allow_webm=allow_webm,
+                        allow_mp4=allow_mp4,
                     )
                 case _:
                     raise AssertionError(
@@ -157,7 +161,7 @@ class ImgHndlrOrchestrator:
             help="Enable saving/loading target directory path",
         )
         parser.add_argument(
-            "--dedupe",
+            "--phash",
             action="store_true",
             help="Calculate perceptual hashes and find similar images",
         )
@@ -167,9 +171,19 @@ class ImgHndlrOrchestrator:
             help="Include WebM files even if the UI cannot display them",
         )
         parser.add_argument(
+            "--allow_mp4",
+            action="store_true",
+            help="Include MP4 files even if the UI cannot display them",
+        )
+        parser.add_argument(
+            "--allow_multimedia",
+            action="store_true",
+            help="Include both WebM and MP4 files even if the UI cannot display them",
+        )
+        parser.add_argument(
             "--duplicates_only",
             action="store_true",
-            help="Show only similar images; requires --dedupe",
+            help="Show only similar images; requires --phash",
         )
         parser.add_argument(
             "--source",
@@ -184,8 +198,8 @@ class ImgHndlrOrchestrator:
             help="Source-specific input: Full 4chan thread URL or local directory path.",
         )
         parsed_args = parser.parse_args()
-        if parsed_args.duplicates_only and not parsed_args.dedupe:
-            parser.error("--duplicates_only requires --dedupe")
+        if parsed_args.duplicates_only and not parsed_args.phash:
+            parser.error("--duplicates_only requires --phash")
         source_type = SourceType(parsed_args.source)
 
         cls().run(
@@ -193,8 +207,9 @@ class ImgHndlrOrchestrator:
             source_input=parsed_args.source_input,
             use_config=parsed_args.conf,
             duplicates_only=parsed_args.duplicates_only,
-            dedupe=parsed_args.dedupe,
-            allow_webm=parsed_args.allow_webm,
+            dedupe=parsed_args.phash,
+            allow_webm=parsed_args.allow_webm or parsed_args.allow_multimedia,
+            allow_mp4=parsed_args.allow_mp4 or parsed_args.allow_multimedia,
         )
 
 

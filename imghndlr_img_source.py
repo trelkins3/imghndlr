@@ -54,7 +54,11 @@ class FourChanImageSource(ImageSource):
     """
 
     def __init__(
-        self, thread_url: str, target_dir: str, allow_webm: bool = False
+        self,
+        thread_url: str,
+        target_dir: str,
+        allow_webm: bool = False,
+        allow_mp4: bool = False,
     ) -> None:
         """
         Initializes the image source with a thread URL and a local target directory.
@@ -65,6 +69,7 @@ class FourChanImageSource(ImageSource):
         self.thread_url: str = thread_url
         self.target_dir: str = target_dir
         self.allow_webm: bool = allow_webm
+        self.allow_mp4: bool = allow_mp4
         self.board: str
         self.thread_id: str
         self.board, self.thread_id = self._parse_thread_url(url=thread_url)
@@ -123,6 +128,7 @@ class FourChanImageSource(ImageSource):
             if "tim" in p
             and "ext" in p
             and (self.allow_webm or p["ext"].lower() != ".webm")
+            and (self.allow_mp4 or p["ext"].lower() != ".mp4")
         ]
         total_images: int = len(image_posts)
 
@@ -377,9 +383,15 @@ class DirectoryImageSource(ImageSource):
         ".tif",
     }
 
-    def __init__(self, directory_path: str, allow_webm: bool = False) -> None:
+    def __init__(
+        self,
+        directory_path: str,
+        allow_webm: bool = False,
+        allow_mp4: bool = False,
+    ) -> None:
         self.directory_path: str = os.path.abspath(directory_path)
         self.allow_webm: bool = allow_webm
+        self.allow_mp4: bool = allow_mp4
 
     def get_images(self) -> List[str]:
         if not os.path.isdir(self.directory_path):
@@ -389,6 +401,8 @@ class DirectoryImageSource(ImageSource):
         supported_extensions = self.SUPPORTED_EXTENSIONS
         if self.allow_webm:
             supported_extensions = supported_extensions | {".webm"}
+        if self.allow_mp4:
+            supported_extensions = supported_extensions | {".mp4"}
 
         candidate_entries = [
             entry
