@@ -192,17 +192,23 @@ class BasicAnalyzerPlugin(HandlerPlugin):
             description="Extracts visual metadata from images (dimensions, size, color mode, etc.)",
         )
 
-    def handle(self, image_paths: List[str], dedupe: bool = False) -> SimpleDataset:
+    def handle(
+        self,
+        image_paths: List[str],
+        phash: bool = False,
+        display_full_paths: bool = False,
+    ) -> SimpleDataset:
         """
         Process images and extract visual metadata.
 
         :param image_paths: List of image file paths to analyze.
-        :param dedupe: Whether to calculate perceptual hashes and similarity counts.
+        :param phash: Whether to calculate perceptual hashes and similarity counts.
+        :param display_full_paths: Whether progress output should show full paths.
         :return: Dataset with images and their extracted metadata.
         """
         dataset = SimpleDataset(image_paths)
         perceptual_hashes: Dict[str, Any] = {}
-        if dedupe:
+        if phash:
             import imagehash
 
         total_images = len(image_paths)
@@ -217,7 +223,7 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                     width, height = img.size
                     aspect_ratio = width / height if height > 0 else 0
                     color_mode = img.mode
-                    if dedupe:
+                    if phash:
                         perceptual_hash = imagehash.phash(img)
                         perceptual_hashes[image_path] = perceptual_hash
 
@@ -237,16 +243,19 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                         "extension": extension,
                     },
                 )
-                if dedupe:
+                if phash:
                     dataset.update_metadata_entry(
                         image_path,
                         phash=str(perceptual_hash),
                     )
                 analyzed_count += 1
                 completed_count += 1
+                display_path = (
+                    image_path if display_full_paths else os.path.basename(image_path)
+                )
                 print(
                     f"[{completed_count}/{total_images}] Analyzed: "
-                    f"{os.path.basename(image_path)} | "
+                    f"{display_path} | "
                     f"Elapsed: {analysis_timer.format_elapsed()}"
                 )
             except Exception as e:
@@ -255,9 +264,12 @@ class BasicAnalyzerPlugin(HandlerPlugin):
                     image_path, error=str(e), error_type=type(e).__name__
                 )
                 completed_count += 1
+                display_path = (
+                    image_path if display_full_paths else os.path.basename(image_path)
+                )
                 print(
                     f"[{completed_count}/{total_images}] Failed to analyze: "
-                    f"{os.path.basename(image_path)} | "
+                    f"{display_path} | "
                     f"Elapsed: {analysis_timer.format_elapsed()}"
                 )
 
@@ -266,7 +278,7 @@ class BasicAnalyzerPlugin(HandlerPlugin):
             f"images analyzed in {analysis_timer.format_elapsed()}."
         )
 
-        if not dedupe:
+        if not phash:
             return dataset
 
         similarity_counts: Dict[str, int] = {

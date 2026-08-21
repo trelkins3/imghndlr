@@ -388,16 +388,25 @@ class DirectoryImageSource(ImageSource):
         directory_path: str,
         allow_webm: bool = False,
         allow_mp4: bool = False,
+        recursive: bool = False,
     ) -> None:
         self.directory_path: str = os.path.abspath(directory_path)
         self.allow_webm: bool = allow_webm
         self.allow_mp4: bool = allow_mp4
+        self.recursive: bool = recursive
 
     def get_images(self) -> List[str]:
         if not os.path.isdir(self.directory_path):
             raise ValueError("Source directory does not exist or is not a directory.")
 
-        entries = os.listdir(self.directory_path)
+        if self.recursive:
+            entries = [
+                os.path.relpath(os.path.join(root, filename), self.directory_path)
+                for root, _, filenames in os.walk(self.directory_path)
+                for filename in filenames
+            ]
+        else:
+            entries = os.listdir(self.directory_path)
         supported_extensions = self.SUPPORTED_EXTENSIONS
         if self.allow_webm:
             supported_extensions = supported_extensions | {".webm"}
@@ -417,8 +426,9 @@ class DirectoryImageSource(ImageSource):
         for completed_count, entry in enumerate(candidate_entries, start=1):
             path = os.path.join(self.directory_path, entry)
             image_paths.append(path)
+            display_path = path if self.recursive else entry
             print(
-                f"[{completed_count}/{total_images}] Loaded: {entry} | "
+                f"[{completed_count}/{total_images}] Loaded: {display_path} | "
                 f"Elapsed: {load_timer.format_elapsed()}"
             )
 

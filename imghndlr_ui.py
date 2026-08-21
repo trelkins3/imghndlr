@@ -36,6 +36,7 @@ class ImgGalleryUI:
         source_directory: Optional[str] = None,
         config_file: Optional[str] = None,
         dataset: Optional[Dataset] = None,
+        recursive: bool = False,
     ) -> None:
         """
         Initializes UI workspace, state registers, and active graphics canvas.
@@ -46,6 +47,7 @@ class ImgGalleryUI:
                                  Used to prevent users from accidentally saving back to the source.
                                  Not set for temporary 4chan downloads (which we don't protect).
         :param dataset: Optional Dataset containing image metadata.
+        :param recursive: Whether to display full paths for recursively loaded images.
         """
         # Window/app management
         self.root: tk.Tk = root
@@ -58,6 +60,7 @@ class ImgGalleryUI:
         self.source_directory: Optional[str] = source_directory
         self.config_file: Optional[str] = config_file
         self.dataset: Optional[Dataset] = dataset
+        self.recursive: bool = recursive
 
         # Current state variables
         self.current_index: int = 0
@@ -286,14 +289,16 @@ class ImgGalleryUI:
             text=f"Image {self.current_index + 1} of {len(self.image_paths)}"
         )
         img_path: str = self.image_paths[self.current_index]
-        filename = os.path.basename(img_path)
-        self.file_info_label.config(text=filename)
+        display_path = img_path if self.recursive else os.path.basename(img_path)
+        self.file_info_label.config(text=display_path)
 
         try:
             self.current_raw_img = Image.open(fp=img_path)
         except Exception:
             self.current_raw_img = None
-            self.image_label.config(image="", text=f"Error loading image:\n{filename}")
+            self.image_label.config(
+                image="", text=f"Error loading image:\n{display_path}"
+            )
 
         self.render_scaled_image()
         self.update_save_status()
@@ -340,9 +345,9 @@ class ImgGalleryUI:
             return
 
         img_path = self.image_paths[self.current_index]
-        filename = os.path.basename(img_path)
+        display_path = img_path if self.recursive else os.path.basename(img_path)
 
-        self.root.title(f"imghndlr Gallery - {filename}")
+        self.root.title(f"imghndlr Gallery - {display_path}")
 
     def _update_metadata_display(self) -> None:
         """

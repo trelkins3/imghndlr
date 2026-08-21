@@ -39,7 +39,9 @@ def main() -> int:
     common_args = ["--check"] if args.check else []
 
     exit_codes = []
-    exit_codes.append(run_module("isort", common_args + target))
+    exit_codes.append(
+        run_module("isort", ["--profile", "black"] + common_args + target)
+    )
     exit_codes.append(run_module("black", common_args + target))
     if args.check:
         exit_codes.append(run_module("ruff", ["check"] + target))

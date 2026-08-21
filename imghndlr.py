@@ -33,9 +33,10 @@ class ImgHndlrOrchestrator:
         source_input: str,
         use_config: bool = False,
         duplicates_only: bool = False,
-        dedupe: bool = False,
+        phash: bool = False,
         allow_webm: bool = False,
         allow_mp4: bool = False,
+        recursive: bool = False,
     ) -> None:
         """
         Perform setup, fetch image paths, invoke plugins, then spin up the UI.
@@ -44,9 +45,10 @@ class ImgHndlrOrchestrator:
         :param source_input: The source-specific input string (ex. 4chan URL, subreddit name, etc.)
         :param use_config: Whether to enable persistent config file
         :param duplicates_only: Whether to display only images with similar matches.
-        :param dedupe: Whether to calculate perceptual hashes and similarity counts.
+        :param phash: Whether to calculate perceptual hashes and similarity counts.
         :param allow_webm: Whether to include WebM files in source results.
         :param allow_mp4: Whether to include MP4 files in source results.
+        :param recursive: Whether directory sources should include subdirectories.
         """
         from imghndlr_img_source import DirectoryImageSource, FourChanImageSource
 
@@ -77,6 +79,7 @@ class ImgHndlrOrchestrator:
                         directory_path=source_input,
                         allow_webm=allow_webm,
                         allow_mp4=allow_mp4,
+                        recursive=recursive,
                     )
                 case SourceType.FOURCHAN:
                     # thanks mypy
@@ -113,7 +116,11 @@ class ImgHndlrOrchestrator:
             # Run basic analysis only for now. EXIF extraction plugin is disabled pending debug.
             print("Analyzing images...")
             analyzer = BasicAnalyzerPlugin()
-            dataset = analyzer.handle(image_paths, dedupe=dedupe)
+            dataset = analyzer.handle(
+                image_paths,
+                phash=phash,
+                display_full_paths=recursive,
+            )
             print("Image analysis complete.")
 
             if duplicates_only:
@@ -181,6 +188,11 @@ class ImgHndlrOrchestrator:
             help="Include both WebM and MP4 files even if the UI cannot display them",
         )
         parser.add_argument(
+            "--recursive",
+            action="store_true",
+            help="Include images from subdirectories when using --source dir",
+        )
+        parser.add_argument(
             "--duplicates_only",
             action="store_true",
             help="Show only similar images; requires --phash",
@@ -207,9 +219,10 @@ class ImgHndlrOrchestrator:
             source_input=parsed_args.source_input,
             use_config=parsed_args.conf,
             duplicates_only=parsed_args.duplicates_only,
-            dedupe=parsed_args.phash,
+            phash=parsed_args.phash,
             allow_webm=parsed_args.allow_webm or parsed_args.allow_multimedia,
             allow_mp4=parsed_args.allow_mp4 or parsed_args.allow_multimedia,
+            recursive=parsed_args.recursive,
         )
 
 
