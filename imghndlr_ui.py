@@ -6,7 +6,8 @@ import sys
 import tempfile
 import tkinter as tk
 from io import BytesIO
-from typing import Dict, List, Optional
+from tkinter import messagebox
+from typing import Dict, List, Optional, Set
 
 from PIL import Image, ImageTk
 
@@ -37,6 +38,7 @@ class ImgGalleryUI:
         config_file: Optional[str] = None,
         dataset: Optional[Dataset] = None,
         recursive: bool = False,
+        duplicate_review: bool = False,
     ) -> None:
         """
         Initializes UI workspace, state registers, and active graphics canvas.
@@ -48,6 +50,7 @@ class ImgGalleryUI:
                                  Not set for temporary 4chan downloads (which we don't protect).
         :param dataset: Optional Dataset containing image metadata.
         :param recursive: Whether to display full paths for recursively loaded images.
+        :param duplicate_review: Whether to display grouped side-by-side duplicate review.
         """
         # Window/app management
         self.root: tk.Tk = root
@@ -61,6 +64,7 @@ class ImgGalleryUI:
         self.config_file: Optional[str] = config_file
         self.dataset: Optional[Dataset] = dataset
         self.recursive: bool = recursive
+        self.duplicate_review: bool = duplicate_review
 
         # Current state variables
         self.current_index: int = 0
@@ -80,14 +84,34 @@ class ImgGalleryUI:
         self.image_label: tk.Label
         self.metadata_frame: tk.Frame
         self.metadata_labels: Dict[str, tk.Label] = {}
+        self.duplicate_groups: List[List[str]] = []
+        self.duplicate_group_index: int = 0
+        self.duplicate_member_index: int = 1
+        self.duplicate_left_label: tk.Label
+        self.duplicate_right_label: tk.Label
+        self.duplicate_left_info: tk.Label
+        self.duplicate_right_info: tk.Label
+        self.duplicate_status_label: tk.Label
+        self.duplicate_images: Dict[str, ImageTk.PhotoImage] = {}
+        self.duplicate_refresh_pending: bool = False
 
         if not self.image_paths:
             self._show_empty_message()
             return
 
-        self._build_ui()
+        if self.duplicate_review:
+            self.duplicate_groups = self._build_duplicate_groups()
+            if not self.duplicate_groups:
+                self._show_empty_message()
+                return
+            self._build_duplicate_review_ui()
+        else:
+            self._build_ui()
         self._bind_events()
-        self._load_image_data()
+        if self.duplicate_review:
+            self._load_duplicate_group()
+        else:
+            self._load_image_data()
 
     def _load_saved_directory(self) -> str:
         """
@@ -224,10 +248,167 @@ class ImgGalleryUI:
         self.image_label = tk.Label(master=self.root, anchor="center")
         self.image_label.pack(side="top", expand=True, fill="both")
 
+    def _build_duplicate_groups(self) -> List[List[str]]:
+        """Build connected duplicate groups from the analyzer's pairwise matches."""
+        if not self.dataset:
+            return []
+
+        image_set = set(self.image_paths)
+        adjacency: Dict[str, Set[str]] = {path: set() for path in self.image_paths}
+        for image_path in self.image_paths:
+            metadata = self.dataset.get_metadata_for_image(image_path)
+            for match in metadata.get("similar_images", []):
+                if isinstance(match, dict):
+                    other_path = match.get("path")
+                else:
+                    other_path = match
+                if other_path in image_set:
+                    adjacency[image_path].add(other_path)
+                    adjacency[other_path].add(image_path)
+
+        groups: List[List[str]] = []
+        visited: Set[str] = set()
+        for image_path in self.image_paths:
+            if image_path in visited or not adjacency[image_path]:
+                continue
+            group: List[str] = []
+            pending = [image_path]
+            while pending:
+                current_path = pending.pop()
+                if current_path in visited:
+                    continue
+                visited.add(current_path)
+                group.append(current_path)
+                pending.extend(adjacency[current_path] - visited)
+            group_members = set(group)
+            groups.append([path for path in self.image_paths if path in group_members])
+        return groups
+
+    def _build_duplicate_review_ui(self) -> None:
+        """Construct the side-by-side duplicate review controls."""
+        self.status_bar = tk.Label(
+            master=self.root,
+            text="",
+            font=("Arial", 11, "bold"),
+            bd=1,
+            relief="sunken",
+            anchor="w",
+            padx=10,
+            pady=5,
+        )
+        self.status_bar.pack(side="bottom", fill="x")
+
+        controls = tk.Frame(master=self.root)
+        controls.pack(side="bottom", fill="x", pady=8)
+        tk.Button(
+            master=controls,
+            text="Previous Group",
+            command=self.show_prev_duplicate_group,
+        ).pack(side="left", padx=8)
+        tk.Button(
+            master=controls, text="Skip / Next", command=self.show_next_duplicate_group
+        ).pack(side="left", padx=8)
+        tk.Button(
+            master=controls,
+            text="Previous Match",
+            command=self.show_prev_duplicate_member,
+        ).pack(side="left", padx=8)
+        tk.Button(
+            master=controls,
+            text="Next Match",
+            command=self.show_next_duplicate_member,
+        ).pack(side="left", padx=8)
+        tk.Button(
+            master=controls,
+            text="Delete Right Source",
+            command=self.delete_duplicate_right,
+            bg="#f44336",
+            fg="white",
+        ).pack(side="right", padx=8)
+        tk.Button(
+            master=controls,
+            text="Delete Left Source",
+            command=self.delete_duplicate_left,
+            bg="#f44336",
+            fg="white",
+        ).pack(side="right", padx=8)
+
+        keyboard_help = tk.Label(
+            master=self.root,
+            text=(
+                "Keyboard: Left/Right = previous/next group | "
+                "Up/Down = previous/next match | Delete = delete right source | "
+                "Escape = close"
+            ),
+            font=("Arial", 9),
+            fg="#555555",
+        )
+        keyboard_help.pack(side="top", fill="x", pady=(0, 4))
+
+        self.duplicate_status_label = tk.Label(
+            master=self.root, text="", font=("Arial", 12, "bold")
+        )
+        self.duplicate_status_label.pack(side="top", fill="x", pady=6)
+
+        comparison_frame = tk.Frame(master=self.root)
+        comparison_frame.pack(side="top", expand=True, fill="both", padx=12, pady=4)
+        comparison_frame.columnconfigure(0, weight=1)
+        comparison_frame.columnconfigure(1, weight=1)
+        comparison_frame.rowconfigure(1, weight=1)
+
+        self.duplicate_left_info = tk.Label(
+            master=comparison_frame,
+            text="",
+            font=("Arial", 10),
+            wraplength=350,
+            justify="left",
+            anchor="w",
+        )
+        self.duplicate_left_info.grid(row=0, column=0, sticky="ew", padx=8, pady=4)
+        self.duplicate_right_info = tk.Label(
+            master=comparison_frame,
+            text="",
+            font=("Arial", 10),
+            wraplength=350,
+            justify="left",
+            anchor="w",
+        )
+        self.duplicate_right_info.grid(row=0, column=1, sticky="ew", padx=8, pady=4)
+
+        self.duplicate_left_label = tk.Label(master=comparison_frame, anchor="center")
+        self.duplicate_left_label.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+        self.duplicate_right_label = tk.Label(master=comparison_frame, anchor="center")
+        self.duplicate_right_label.grid(row=1, column=1, sticky="nsew", padx=8, pady=4)
+
+        self.root.bind(sequence="<Configure>", func=self._on_duplicate_resize)
+
+    def _on_duplicate_resize(self, event: tk.Event) -> None:
+        """Refresh comparison images once after the window settles on a new size."""
+        if event.widget is not self.root or self.duplicate_refresh_pending:
+            return
+        self.duplicate_refresh_pending = True
+        self.root.after_idle(self._refresh_duplicate_images)
+
+    def _refresh_duplicate_images(self) -> None:
+        self.duplicate_refresh_pending = False
+        if self.duplicate_groups:
+            self._load_duplicate_group()
+
     def _bind_events(self) -> None:
         """
         Attaches system key hooks, widget focus managers, and container configuration listeners.
         """
+        if self.duplicate_review:
+            self.root.bind(sequence="<Left>", func=self._handle_duplicate_prev_key)
+            self.root.bind(sequence="<Right>", func=self._handle_duplicate_next_key)
+            self.root.bind(sequence="<Up>", func=self._handle_duplicate_prev_member_key)
+            self.root.bind(
+                sequence="<Down>", func=self._handle_duplicate_next_member_key
+            )
+            self.root.bind(sequence="<Delete>", func=self._handle_duplicate_delete_key)
+            self.root.bind(sequence="<Escape>", func=self._handle_escape_key)
+            return
+
         self.root.bind(sequence="<Left>", func=self._handle_left_key)
         self.root.bind(sequence="<Right>", func=self._handle_right_key)
         self.root.bind(sequence="<space>", func=self._handle_space_key)
@@ -274,6 +455,157 @@ class ImgGalleryUI:
         target_dir = self.dir_entry.get().strip()
         self._save_directory_to_config(target_dir)
         self.update_save_status()
+
+    def _load_duplicate_group(self) -> None:
+        """Render the current duplicate group and its selected comparison member."""
+        if not self.duplicate_groups:
+            self.duplicate_status_label.config(text="No duplicate groups remain.")
+            self.root.title("imghndlr Duplicate Review - complete")
+            self.duplicate_left_label.config(image="", text="Review complete")
+            self.duplicate_right_label.config(image="", text="")
+            return
+
+        group = self.duplicate_groups[self.duplicate_group_index]
+        self.duplicate_member_index = min(self.duplicate_member_index, len(group) - 1)
+        left_path = group[0]
+        right_path = group[self.duplicate_member_index]
+        self.duplicate_status_label.config(
+            text=(
+                f"Group {self.duplicate_group_index + 1} of "
+                f"{len(self.duplicate_groups)} | {len(group)} related images"
+            )
+        )
+        self.root.title("imghndlr Duplicate Review")
+        self._render_duplicate_image(left_path, self.duplicate_left_label)
+        self._render_duplicate_image(right_path, self.duplicate_right_label)
+        self.duplicate_left_info.config(text=self._duplicate_image_info(left_path))
+        self.duplicate_right_info.config(
+            text=self._duplicate_image_info(right_path, left_path)
+        )
+
+    def _render_duplicate_image(self, image_path: str, label: tk.Label) -> None:
+        """Load and fit one duplicate candidate into its comparison pane."""
+        try:
+            with Image.open(image_path) as image:
+                image_copy = image.copy()
+        except Exception:
+            label.config(image="", text=f"Error loading image:\n{image_path}")
+            return
+
+        display_width = label.winfo_width()
+        display_height = label.winfo_height()
+        if display_width <= 1 or display_height <= 1:
+            display_width, display_height = 375, 450
+        image_copy.thumbnail(
+            size=(display_width, display_height), resample=Image.Resampling.LANCZOS
+        )
+        tk_image = ImageTk.PhotoImage(image=image_copy)
+        self.duplicate_images[image_path] = tk_image
+        label.config(image=tk_image, text="")
+
+    def _duplicate_image_info(
+        self, image_path: str, compared_path: Optional[str] = None
+    ) -> str:
+        metadata = (
+            self.dataset.get_metadata_for_image(image_path) if self.dataset else {}
+        )
+        dimensions = f"{metadata.get('width', '?')}x{metadata.get('height', '?')}"
+        info = f"{image_path}\n{dimensions} | {metadata.get('disk_size_kb', '?')} KB"
+        if compared_path and self.dataset:
+            matches = metadata.get("similar_images", [])
+            for match in matches:
+                if isinstance(match, dict) and match.get("path") == compared_path:
+                    info += f"\nHash distance: {match.get('distance', '?')}"
+                    break
+        return info
+
+    def _display_path(self, image_path: str) -> str:
+        return image_path if self.recursive else os.path.basename(image_path)
+
+    def show_prev_duplicate_group(self) -> None:
+        if self.duplicate_groups:
+            self.duplicate_group_index = (self.duplicate_group_index - 1) % len(
+                self.duplicate_groups
+            )
+            self.duplicate_member_index = 1
+            self._load_duplicate_group()
+
+    def show_next_duplicate_group(self) -> None:
+        if self.duplicate_groups:
+            self.duplicate_group_index = (self.duplicate_group_index + 1) % len(
+                self.duplicate_groups
+            )
+            self.duplicate_member_index = 1
+            self._load_duplicate_group()
+
+    def show_prev_duplicate_member(self) -> None:
+        if self.duplicate_groups:
+            group = self.duplicate_groups[self.duplicate_group_index]
+            if len(group) > 1:
+                self.duplicate_member_index = (self.duplicate_member_index - 2) % (
+                    len(group) - 1
+                ) + 1
+                self._load_duplicate_group()
+
+    def show_next_duplicate_member(self) -> None:
+        if self.duplicate_groups:
+            group = self.duplicate_groups[self.duplicate_group_index]
+            if len(group) > 1:
+                self.duplicate_member_index = (
+                    self.duplicate_member_index % (len(group) - 1)
+                ) + 1
+                self._load_duplicate_group()
+
+    def _handle_duplicate_prev_key(self, event: tk.Event) -> None:
+        self.show_prev_duplicate_group()
+
+    def _handle_duplicate_next_key(self, event: tk.Event) -> None:
+        self.show_next_duplicate_group()
+
+    def _handle_duplicate_prev_member_key(self, event: tk.Event) -> None:
+        self.show_prev_duplicate_member()
+
+    def _handle_duplicate_next_member_key(self, event: tk.Event) -> None:
+        self.show_next_duplicate_member()
+
+    def _handle_duplicate_delete_key(self, event: tk.Event) -> None:
+        self.delete_duplicate_right()
+
+    def delete_duplicate_left(self) -> None:
+        if self.duplicate_groups:
+            self._delete_duplicate_source(
+                self.duplicate_groups[self.duplicate_group_index][0]
+            )
+
+    def delete_duplicate_right(self) -> None:
+        if self.duplicate_groups:
+            group = self.duplicate_groups[self.duplicate_group_index]
+            self._delete_duplicate_source(group[self.duplicate_member_index])
+
+    def _delete_duplicate_source(self, image_path: str) -> None:
+        """Delete a reviewed source image and rebuild the remaining review queue."""
+        if not messagebox.askyesno(
+            "Delete source image?",
+            f"Permanently delete this source file?\n\n{image_path}",
+            parent=self.root,
+        ):
+            return
+        try:
+            os.remove(image_path)
+        except Exception as error:
+            self.status_bar.config(text=f"Delete failed: {error}", fg="#d84315")
+            return
+
+        self.image_paths = [path for path in self.image_paths if path != image_path]
+        self.duplicate_groups = self._build_duplicate_groups()
+        self.duplicate_group_index = min(
+            self.duplicate_group_index, max(len(self.duplicate_groups) - 1, 0)
+        )
+        self.duplicate_member_index = 1
+        self.status_bar.config(
+            text=f"Deleted source: {self._display_path(image_path)}", fg="#2e7d32"
+        )
+        self._load_duplicate_group()
 
     def _load_image_data(self) -> None:
         """
@@ -389,7 +721,13 @@ class ImgGalleryUI:
         for key, value in metadata.items():
             if key.startswith("error"):
                 continue
-            if key in {"width", "height", "disk_size_kb", "phash"}:
+            if key in {
+                "width",
+                "height",
+                "disk_size_kb",
+                "phash",
+                "similar_images",
+            }:
                 continue
             if key == "dimensions" or key == "disk_size":
                 continue

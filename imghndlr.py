@@ -141,6 +141,8 @@ class ImgHndlrOrchestrator:
                 source_directory=source_directory,
                 config_file=ImgHndlrOrchestrator.CONFIG_FILE,
                 dataset=dataset,
+                recursive=recursive,
+                duplicate_review=duplicates_only,
             )
             root.mainloop()
             print("GUI closed.")

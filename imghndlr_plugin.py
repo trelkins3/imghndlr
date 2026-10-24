@@ -284,17 +284,28 @@ class BasicAnalyzerPlugin(HandlerPlugin):
         similarity_counts: Dict[str, int] = {
             image_path: 0 for image_path in perceptual_hashes
         }
+        similar_images: Dict[str, List[Dict[str, Any]]] = {
+            image_path: [] for image_path in perceptual_hashes
+        }
         hashed_images = list(perceptual_hashes.items())
         for index, (image_path, perceptual_hash) in enumerate(hashed_images):
             for other_path, other_hash in hashed_images[index + 1 :]:
-                if perceptual_hash - other_hash <= self.SIMILARITY_THRESHOLD:
+                distance = perceptual_hash - other_hash
+                if distance <= self.SIMILARITY_THRESHOLD:
                     similarity_counts[image_path] += 1
                     similarity_counts[other_path] += 1
+                    similar_images[image_path].append(
+                        {"path": other_path, "distance": distance}
+                    )
+                    similar_images[other_path].append(
+                        {"path": image_path, "distance": distance}
+                    )
 
         for image_path, similar_image_count in similarity_counts.items():
             dataset.update_metadata_entry(
                 image_path,
                 similar_image_count=similar_image_count,
+                similar_images=similar_images[image_path],
             )
 
         return dataset
